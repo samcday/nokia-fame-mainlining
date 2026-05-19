@@ -1,0 +1,36 @@
+[submodule "linux"]
+	path = linux
+	url = https://github.com/msm8227-mainline/linux.git
+[submodule "u-boot"]
+	path = u-boot
+	url = https://github.com/u-boot/u-boot.git
+[submodule "community/android4lumia-device-fame"]
+	path = community/android4lumia-device-fame
+	url = https://github.com/Android4Lumia/android_device_nokia_fame
+[submodule "community/android4lumia-kernel-msm8x27"]
+	path = community/android4lumia-kernel-msm8x27
+	url = https://github.com/Android4Lumia/android_kernel_nokia_msm8x27
+[submodule "community/android4lumia-lk-msm8227"]
+	path = community/android4lumia-lk-msm8227
+	url = https://github.com/Android4Lumia/bootloader_msm8227
+[submodule "community/android4lumia-notes"]
+	path = community/android4lumia-notes
+	url = https://github.com/Android4Lumia/notes
+[submodule "prior-art/mainline4lumia-linux"]
+	path = prior-art/mainline4lumia-linux
+	url = https://github.com/Mainline4Lumia/linux
+[submodule "prior-art/mainline4lumia-lk2nd"]
+	path = prior-art/mainline4lumia-lk2nd
+	url = https://github.com/Mainline4Lumia/lk2nd
+[submodule "prior-art/mainline4lumia-scripts"]
+	path = prior-art/mainline4lumia-scripts
+	url = https://github.com/Mainline4Lumia/LumiaScripts
+[submodule "prior-art/WPinternals"]
+	path = prior-art/WPinternals
+	url = https://github.com/ReneLergner/WPinternals
+[submodule "prior-art/woa-lumia950xl-pkg"]
+	path = prior-art/woa-lumia950xl-pkg
+	url = https://github.com/WOA-Project/Lumia950XLPkg
+[submodule "tools/img2ffu"]
+	path = tools/img2ffu
+	url = https://github.com/MobileTooling/img2ffu

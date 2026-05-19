@@ -1,0 +1,13 @@
+out/
+blobs/
+*.log
+*.tmp
+
+# Large/proprietary local extraction products. Keep inventories and notes in git,
+# but do not commit FFUs, raw partitions, firmware blobs, or unpacked images.
+extracted/ffu/*
+extracted/partitions/*
+extracted/firmware/*
+extracted/acpi-or-platform-config/*
+!extracted/README.md
+!extracted/**/.gitkeep
