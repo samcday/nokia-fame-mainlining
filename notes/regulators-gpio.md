@@ -31,6 +31,18 @@ Initial regulator/GPIO data comes from the msm8227-mainline Fame DTS and is not 
 | WLAN pins | MSM GPIO84-88 | Fame DTS | C |
 | BT pins | MSM GPIO28, GPIO29, GPIO83 | Fame DTS | C |
 
+## Stock FFU ACPI Breadcrumbs
+
+| Function | FFU/ACPI Clue | Source | Trust |
+| --- | --- | --- | --- |
+| TLMM GPIO controller | `GIO0` HID `QCOM0500` | `dsdt.dsl:17194-17219` | A |
+| PMIC GPIO / power-key controller | `PWIO` HID `QCOM0D20` | `dsdt.dsl:17222-17249` | A |
+| Button controller | `BTN0` HID `QCOM0D60`, CID `PNP0C40`, resource buffer references `PWIO` and `PM01` | `dsdt.dsl:17323-17397` | A, resource decode pending |
+| SDCC3 card/resource GPIO | `SDC3` resource buffer includes `GIO0` pin 94 | `dsdt.dsl:18088-18118` | A, GPIO flags pending |
+| Touch bus/GPIO shape | `TCH1` depends on `I2C3` and `GIO0`; resource buffer decodes to I2C address `0x4B`, `GpioInt` pin 11, and `GpioIo` pin 52 | `dsdt.dsl:21056-21085` | A, GPIO flags pending |
+
+Do not overwrite DTS GPIO flags directly from raw `_CRS` bytes. Decode and verify ACPI flags, pulls, trigger type, polarity, and wake behavior first.
+
 ## Known DTS Issues
 
 `qcom-msm8227-nokia-fame.dts` currently uses `drive-strengh` instead of `drive-strength` in SDCC pinctrl groups. Fix this before treating SDCC pinctrl as configured.

@@ -14,6 +14,28 @@ From `~/src/lp-externals/UNLOCKING.md`:
 | BootMgr app | `1.16` |
 | FlashApp protocol/app | `1.15` / `1.28` |
 
+## Stock FFU-Derived Facts
+
+From `RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu` and extracted PLAT ACPI:
+
+| Area | Fact | Source | Trust |
+| --- | --- | --- | --- |
+| FFU platform | `Nokia.MSM8227.P6036` | `notes/ffu-inventory.md` | A |
+| GPT | 28 partitions, disk GUID `ae420040-13dd-41f2-ae7f-0dc35854c8d7` | `notes/partitions.md` | A |
+| EFIESP | FAT16 at stock GPT LBA `131072`, size `67108864` | `notes/partitions.md` | A |
+| PLAT | FAT12 at stock GPT LBA `106496`, size `8388608` | `notes/partitions.md` | A |
+| ACPI identity | DSDT OEM `QCOMM`, SSDT OEM `NOKIA`, table `MSM8930` | `notes/acpi.md` | A |
+| Display | PCFG panel `Teisko`, 480x800 24bpp DSI, two lanes, pixel clock `52598700` Hz | `notes/display.md` | A |
+| Storage controllers | ACPI `SDC1` and `SDC3` use HID `QCOM7002`; `SDC1` has child `EMMC` with `_RMV` returning `Zero`; `SDC3` resource buffer includes `GIO0` pin 94 | `dsdt.dsl:18048-18118` | A, GPIO flags pending |
+| USB function | ACPI `UFN1` uses HID `QCOM01C0`, base `0x12500000`, and `PHYC` config method | `dsdt.dsl:18376-18440` | A |
+| Touch resources | ACPI `TCH1` HID `NOKIA_TOUCH`, depends on `I2C3` and `GIO0`; resource buffer decodes to I2C address `0x4B`, `GpioInt` pin 11, and `GpioIo` pin 52 | `dsdt.dsl:21056-21085` | A, GPIO flags pending |
+| Sensors | SSDT has accelerometer `KXTNK`, ALS/PRX candidates `QPDS_T900_*` and `LTR_554ALS_02_*` on `IC12` | `ssdt.dsl:30-582` | A, population decision pending |
+| WLAN/BT/FM | ACPI `RIVA` HID `QCOM0E20` with nested `BTH0`, `QWLN`, `FMT0`, and `NOKIA_WLAN_PROXY` | `dsdt.dsl:17710-17801` | A |
+| GPS | ACPI nested `GPS` HID `QCOM_GPS` under `SMD0` | `dsdt.dsl:17597-17610` | A |
+| Vibra | ACPI `VIB1` HID `NOKIA_VIBRA_DIME`; SSDT also has `VIB2` HID `ODDT_VIB` | `dsdt.dsl:21031-21043`, `ssdt.dsl:594-606` | A |
+
+Use these FFU-derived facts as breadcrumbs before changing DTS. ACPI resource buffers still need complete decoding for IRQ polarity, GPIO flags, supply sequencing, and exact Linux bindings.
+
 ## Community Device Sketch
 
 From `community/android4lumia-device-fame/README.md`:
@@ -47,6 +69,8 @@ From `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts`:
 | USB | `usb1` enabled as `otg`, HS PHY supplied by PM8038 L3/L4 | C |
 | WCNSS/Riva | WLAN pins GPIO84-88, BT pins GPIO28/29/83, WCN3660-style iris | C |
 | Touch | Disabled Synaptics RMI4 sketch at I2C `0x4b`, IRQ GPIO11, reset GPIO52 | C, disabled |
+
+The stock DSDT `TCH1` resource buffer independently points at `I2C3`, decodes to I2C address `0x4B`, and references `GIO0` pins 11 and 52. This corroborates the disabled DTS sketch's bus/address/GPIO shape but does not by itself identify the controller as Synaptics or validate regulator rails.
 
 ## postmarketOS Clues
 

@@ -23,6 +23,6 @@ From `~/src/lp-externals/UNLOCKING.md`:
 | Platform ID | `Nokia.MSM8227.P6036.1.2` | B |
 | BootMgr app | `1.16` | B |
 | FlashApp protocol/app | `1.15` / `1.28` | B |
-| LumiaDB FFU | `RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu` | B, pending local download |
+| LumiaDB FFU | `RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu`, sha256 `c323a5e337b4b3e9d114db351adf1411c0359b391bdbaaf0f1a0a47a5a5af819` | A for extracted stock facts |
 
 Do not record IMEI in this repository.
