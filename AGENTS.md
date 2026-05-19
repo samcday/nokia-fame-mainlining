@@ -10,7 +10,7 @@ Current top-level submodule baseline:
 
 | Path | Role |
 | --- | --- |
-| `linux/` | Kernel tree, initially pinned to `msm8227-mainline/msm8227-6.19`. |
+| `linux/` | Kernel tree, upstream-first; use current mainline as the baseline. |
 | `u-boot/` | U-Boot tree, initially upstream-based. |
 | `community/android4lumia-*` | Community Android reconstruction; use as hypotheses only. |
 | `prior-art/mainline4lumia-*` | Adjacent Lumia methods and scripts. |
@@ -43,7 +43,9 @@ Use this order when facts conflict:
 
 ## Kernel Notes
 
-Initial kernel baseline is `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts` from `msm8227-mainline/msm8227-6.19`.
+`linux/` work must target upstreamable Linux kernel patches from current mainline. Use `msm8227-mainline` and community trees only as references, not as the source of truth or a base to polish.
+
+Before any work inside `linux/`, AI coding assistants must read `linux/README` and follow the referenced `linux/Documentation/process/coding-assistants.rst`. In particular, do not add `Signed-off-by` tags to kernel commits or patches; only the human submitter may certify DCO signoff. Follow the normal kernel development process, coding style, submitting-patches guidance, and devicetree binding requirements.
 
 Before changing a GPIO, regulator, memory range, partition offset, boot image layout value, panel command, or other non-obvious hardware fact, add or update a breadcrumb in `notes/*.md` with exact source paths and line ranges.
 
