@@ -33,9 +33,12 @@ On entry, the payload:
 
 1. Prints a short message through UEFI `ConOut` if available.
 2. Disables the UEFI watchdog timer if available.
-3. Repeatedly paints the FFU-derived framebuffer at `0x80400000`.
+3. Queries `EFI_GRAPHICS_OUTPUT_PROTOCOL` and prints GOP mode/base details if available.
+4. Repeatedly paints the GOP framebuffer when available, or falls back to the FFU-derived framebuffer at `0x80400000`.
 
-Framebuffer assumptions are from the stock FFU ACPI/PCFG breadcrumbs:
+The test pattern uses a green border and white marker block when GOP is used. It uses a red border when falling back to the hardcoded framebuffer.
+
+Fallback framebuffer assumptions are from the stock FFU ACPI/PCFG breadcrumbs:
 
 | Field | Value |
 | --- | --- |

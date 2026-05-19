@@ -126,3 +126,68 @@ cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=fa
 ```
 
 The `0x1C2` write completed in 29 chunks. The next result to record is the physical display behavior after reset.
+
+## Direct Linux EFI-Stub EFIESP Test
+
+Built a direct ARM Linux EFI-stub smoke image from the current Fame kernel tree without changing `qcom_defconfig`. The out-of-tree build config enabled EFI and forced a test-only built-in command line:
+
+```text
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_EFI_ARMSTUB_DTB_LOADER=y
+CONFIG_CMDLINE_FORCE=y
+CONFIG_CMDLINE="dtb=/qcom-msm8227-nokia-fame.dtb console=tty0 loglevel=8 ignore_loglevel efi=debug,novamap,noruntime panic=0"
+```
+
+The resulting `zImage` reports as a PE/COFF EFI application with `IMAGE_FILE_MACHINE_THUMB (0x1C2)` and `IMAGE_SUBSYSTEM_EFI_APPLICATION`, matching the Lumia fallback loader's accepted machine type.
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| EFI-stub `zImage` | `out/fame/linux-efi-build/arch/arm/boot/zImage` | `9527808` | `32d6cc6ee52572f326e787c943dee60d707095a1d519427a6aca2c8d5d2de1b4` |
+| Fame DTB | `out/fame/linux-efi-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `1972` | `27af4989525682b9324aa4f47abf5d18cb4941ed772be9258134e5ff23a0379d` |
+| Linux EFI EFIESP | `out/fame/uefi-test/EFIESP-linux-efi-smoke.img` | `67108864` | `64d5c003a31b72a1bd37258f3c7e1c069939e4fa4bb6338d10cbf7fcd4f41e80` |
+
+EFIESP layout for the smoke test:
+
+| ESP Path | Source |
+| --- | --- |
+| `/efi/boot/bootarm.efi` | `out/fame/linux-efi-build/arch/arm/boot/zImage` |
+| `/qcom-msm8227-nokia-fame.dtb` | `out/fame/linux-efi-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` |
+
+The image had `48417792` bytes free after packaging.
+
+Write command used after a successful guarded dry-run:
+
+```sh
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true flash raw-write-partition --confirm-raw-write EFIESP /var/home/sam/src/nokia-fame-mainlining/out/fame/uefi-test/EFIESP-linux-efi-smoke.img
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=false reset
+```
+
+The write completed in 29 chunks. After reset, USB re-enumerated as responsive `0421:066e` BootManager (`NOKV` app type 1, BootManager 1.16). Physical display behavior is still the key result to record.
+
+## Minimal ARM UEFI GOP Probe
+
+The minimal ARM UEFI payload was updated to query `EFI_GRAPHICS_OUTPUT_PROTOCOL`. It paints the GOP framebuffer when available and falls back to the FFU-derived hardcoded framebuffer at `0x80400000` otherwise.
+
+Display result encoding:
+
+| Pattern | Meaning |
+| --- | --- |
+| Green border and white marker block | GOP was located and the payload is painting the GOP framebuffer. |
+| Red border | GOP was missing or unusable; payload fell back to the hardcoded framebuffer. |
+
+Test artifacts:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| GOP-probe EFI payload | `minimal-arm-uefi/build/minimal-arm-uefi.efi` | `4096` | `75849f3d415729f077a7ad75d59580b573d3058cef9e52494e66cf6e05a3cbf5` |
+| GOP-probe EFIESP | `out/fame/uefi-test/EFIESP-minimal-arm-uefi-gop.img` | `67108864` | `f90360914ef0e11ebc2e5440fe1f4a8e4f20e6fede91d048ffe37a3de4420c05` |
+
+Write command used after a successful guarded dry-run:
+
+```sh
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true flash raw-write-partition --confirm-raw-write EFIESP /var/home/sam/src/nokia-fame-mainlining/out/fame/uefi-test/EFIESP-minimal-arm-uefi-gop.img
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=false reset
+```
+
+The write completed in 29 chunks. After reset, USB re-enumerated as `0421:066e` BootManager. Physical display behavior is still the key result to record.

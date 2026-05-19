@@ -14,6 +14,13 @@ typedef uint8_t EFI_BOOLEAN;
 #define EFIAPI
 
 typedef struct {
+    uint32_t Data1;
+    uint16_t Data2;
+    uint16_t Data3;
+    uint8_t Data4[8];
+} EFI_GUID;
+
+typedef struct {
 	uint64_t signature;
 	uint32_t revision;
 	uint32_t header_size;
@@ -49,6 +56,10 @@ typedef EFI_STATUS (EFIAPI *EFI_SET_WATCHDOG_TIMER)(
 	uint64_t watchdog_code,
 	EFI_UINTN data_size,
 	EFI_CHAR16 *watchdog_data);
+typedef EFI_STATUS (EFIAPI *EFI_LOCATE_PROTOCOL)(
+	EFI_GUID *protocol,
+	void *registration,
+	void **interface);
 
 typedef struct {
 	EFI_TABLE_HEADER Hdr;
@@ -89,7 +100,7 @@ typedef struct {
 	void *OpenProtocolInformation;
 	void *ProtocolsPerHandle;
 	void *LocateHandleBuffer;
-	void *LocateProtocol;
+	EFI_LOCATE_PROTOCOL LocateProtocol;
 	void *InstallMultipleProtocolInterfaces;
 	void *UninstallMultipleProtocolInterfaces;
 	void *CalculateCrc32;
