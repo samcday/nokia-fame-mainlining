@@ -652,19 +652,19 @@ Build helper:
 
 The helper builds the Linux Fame DTB, builds U-Boot `nokia_fame_lk_fastboot_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, verifies `CONFIG_TEXT_BASE == 0x80208000`, and wraps `u-boot-dtb.bin` in an Android boot image header v0.
 
-Prepared artifacts from the eMMC-capable rebuild:
+Prepared artifacts from the fastboot-flash-capable rebuild:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
 | Fame DTB with USB and SDCC1 nodes | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `4124` | `83b031a23617296a08a2f07fe389a3dc8fcce55a6b6561021986f86c8902d482` |
-| LK-chain U-Boot payload with `bootm`/`abootimg`/MMC | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `324852` | `c7ff036d837a1a1260472de4fae014d2a0282a6b0afd84de25c4f1bc1670c069` |
-| Android boot image with `bootm`/`abootimg`/MMC | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `331776` | `543af5360149b7d4755ced313ba4a9cdead0e8916367daa74fbb9c297d341b78` |
+| LK-chain U-Boot payload with `bootm`/`abootimg`/MMC/fastboot flash | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `334636` | `954ef386d8de4528f217e8add25fed8edcea63e8c2b982367417b48fa6c7d6c6` |
+| Android boot image with `bootm`/`abootimg`/MMC/fastboot flash | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `339968` | `c0af12e1324aff449954e28547d858a4181fcd7a282d2e28f0cfe8e1b0c9d92c` |
 
 `unpack_bootimg` verification:
 
 ```text
 boot magic: ANDROID!
-kernel_size: 324852
+kernel_size: 334636
 kernel load address: 0x80208000
 ramdisk size: 0
 kernel tags load address: 0x80200100
@@ -690,8 +690,13 @@ CONFIG_CMD_READ=y
 CONFIG_CMD_FASTBOOT=y
 CONFIG_EFI_PARTITION=y
 # CONFIG_ANDROID_BOOT_IMAGE_IGNORE_BLOB_ADDR is not set
+CONFIG_FASTBOOT_FLASH=y
+CONFIG_FASTBOOT_FLASH_BLOCK=y
+CONFIG_FASTBOOT_FLASH_BLOCK_INTERFACE_NAME="mmc"
+CONFIG_FASTBOOT_FLASH_BLOCK_DEVICE_ID=0
+CONFIG_FASTBOOT_GPT_NAME="gpt"
 CONFIG_ARM_PL180_MMCI=y
-# CONFIG_MMC_WRITE is not set
+CONFIG_MMC_WRITE=y
 # CONFIG_MMC_HW_PARTITIONING is not set
 CONFIG_USB_FUNCTION_FASTBOOT=y
 CONFIG_CI_UDC=y
@@ -741,6 +746,18 @@ RPMB Capacity: 512 KiB ENH
 ```
 
 `part list mmc 0` reads the current live GPT successfully. The current live disk has the stock FFU partition set plus an extra `HACK` entry at LBA `0x8bb7`; keep this distinct from the stock FFU GPT in `notes/partitions.md`. A direct read-only block test also succeeded: `mmc read 0x82000000 0 1` read one block, the PMBR signature at `0x820001fe` was `55 aa`, and `crc32 0x82000000 0x200` returned `9c6b8c10`.
+
+Fastboot block flash support was then cherry-picked from lore:
+
+```text
+ab4f3dbe690 fastboot: block: Add device selection syntax
+168a57db0d3 fastboot: Add GPT/MBR partition table flashing helper functions
+7cac3c93240 fastboot: block: Add GPT/MBR partition table flashing support
+0d5137d18e7 doc: fastboot: Document block device selection syntax
+1999914a59b qcom_defconfig: Switch Qualcomm fastboot flash from MMC to block
+```
+
+Fame's LK-chain config now enables the block backend for `mmc` device `0`, so partition names target the default eMMC and the lore device-selection syntax can select an explicit block device. `fastboot flash gpt <image>` support is compiled in through the GPT helper path. This was only build-tested and boot-smoke-tested with `fastboot getvar all` plus `mmc info`; no live `fastboot flash`, `fastboot erase`, GPT write, or partitioning command was run.
 
 The `oem run` command takes the U-Boot command after a colon:
 
