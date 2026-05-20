@@ -1,6 +1,8 @@
 # Partitions
 
-The stock FFU now provides the highest-trust offline GPT baseline for RM-914 / `059S083`. A fresh live GPT dump is still pending, so do not assume the current device exactly matches this table until `lp-externals gpt dump` is compared.
+The stock FFU now provides the highest-trust offline GPT baseline for RM-914 / `059S083`. A fresh live BootMgr GPT dump is still pending, so use the table below as the stock baseline and keep live-device differences separate.
+
+LK-chain U-Boot can now read the current live GPT with `fastboot oem 'run:part list mmc 0'`. That live disk matches the stock partition set below plus an extra `HACK` partition at LBA `0x8bb7`; capture a sanitized BootMgr `gpt dump` before treating the current device layout as the new canonical live baseline.
 
 ## Stock FFU GPT Header
 

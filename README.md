@@ -50,6 +50,7 @@ FFU  = RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu
 | Display | Hypothesis | Android4Lumia says Orise-based 800x480; ACPI/PCFG extraction is the next high-trust path. |
 | Touch | Hypothesis | Android4Lumia says Synaptics; Fame DTS has disabled RMI4 sketch. |
 | USB gadget/UDC | Working | U-Boot ChipIdea/ULPI fastboot responds to `fastboot getvar all`; current rebuild enables `bootm`/`abootimg`, `oem run`, console capture, and nested `fastboot boot`. |
+| eMMC | Working | LK-chain U-Boot initializes SDCC1/eMMC, reports the 8-bit MMC 4.5 device, reads blocks, and lists GPT partitions. |
 
 ## Useful Files
 

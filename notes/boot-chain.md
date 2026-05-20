@@ -652,19 +652,19 @@ Build helper:
 
 The helper builds the Linux Fame DTB, builds U-Boot `nokia_fame_lk_fastboot_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, verifies `CONFIG_TEXT_BASE == 0x80208000`, and wraps `u-boot-dtb.bin` in an Android boot image header v0.
 
-Prepared artifacts from the chain-capable rebuild:
+Prepared artifacts from the eMMC-capable rebuild:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Fame DTB with USB node | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `3459` | `36a60e7078829928d85fc642fcadbc2fada723130184b98113b1ab9eefc4fd91` |
-| LK-chain U-Boot payload with `bootm`/`abootimg` | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `298843` | `b7b23be09787be153c7aa74f19ddd8180439e8f4b0130272f604d76f5dfa644a` |
-| Android boot image with `bootm`/`abootimg` | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `303104` | `fc92290e07b68d68b680b987a6522330f039cc1c3d3bb2917bb2dba8071cfa01` |
+| Fame DTB with USB and SDCC1 nodes | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `4124` | `83b031a23617296a08a2f07fe389a3dc8fcce55a6b6561021986f86c8902d482` |
+| LK-chain U-Boot payload with `bootm`/`abootimg`/MMC | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `324852` | `c7ff036d837a1a1260472de4fae014d2a0282a6b0afd84de25c4f1bc1670c069` |
+| Android boot image with `bootm`/`abootimg`/MMC | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `331776` | `543af5360149b7d4755ced313ba4a9cdead0e8916367daa74fbb9c297d341b78` |
 
 `unpack_bootimg` verification:
 
 ```text
 boot magic: ANDROID!
-kernel_size: 298843
+kernel_size: 324852
 kernel load address: 0x80208000
 ramdisk size: 0
 kernel tags load address: 0x80200100
@@ -683,8 +683,16 @@ CONFIG_CMD_BOOTM=y
 CONFIG_CMD_BOOTZ=y
 CONFIG_CMD_ABOOTIMG=y
 CONFIG_CMD_ADTIMG=y
+CONFIG_CMD_LSBLK=y
+CONFIG_CMD_MMC=y
+CONFIG_CMD_PART=y
+CONFIG_CMD_READ=y
 CONFIG_CMD_FASTBOOT=y
+CONFIG_EFI_PARTITION=y
 # CONFIG_ANDROID_BOOT_IMAGE_IGNORE_BLOB_ADDR is not set
+CONFIG_ARM_PL180_MMCI=y
+# CONFIG_MMC_WRITE is not set
+# CONFIG_MMC_HW_PARTITIONING is not set
 CONFIG_USB_FUNCTION_FASTBOOT=y
 CONFIG_CI_UDC=y
 CONFIG_USB_EHCI_MSM=y
@@ -710,6 +718,29 @@ bootm start 0x82000000; bootm loados; go 0x80208000
 ```
 
 This command loads the Android boot-image kernel payload to `CONFIG_TEXT_BASE` and jumps to the fixed-link U-Boot entry instead of invoking Linux `bootm` handoff. The final rebuild installs it as `fastboot_bootcmd` for the Fame-compatible ARM32 Snapdragon path. Live U-Boot-to-U-Boot chaining with the final image re-enumerated fastboot successfully; one host `getvar all` raced the USB disconnect/reconnect with `No such device`, and a retry completed normally.
+
+The first eMMC-capable build exposed SDCC1 as `mmc@12400000: 0`, but `mmc dev 0` timed out with `Card did not respond to voltage select! : -110` because U-Boot had no MSM8960 GCC provider and SDCC1 app clocks were only LK leftovers. A volatile manual SDC1 app-clock setup changed the failure to an EXT_CSD data CRC, proving the card was responding. The remaining data CRC came from using the generic PL18x log2 block-size encoding; Qualcomm's MMCI variant uses the byte block size in bits `[14:4]`, matching `linux/drivers/mmc/host/mmci_qcom_dml.c:183-185` and `community/android4lumia-lk-msm8227/platform/msm_shared/mmc.c:2612-2616`.
+
+Final live eMMC result from the LK-chain image:
+
+```text
+mmc@12400000: 0
+Device: mmc@12400000
+Manufacturer ID: 11
+Name: 008G92
+Bus Speed: 48000000
+Mode: MMC High Speed (52MHz)
+Rd Block Len: 512
+MMC version 4.5
+High Capacity: Yes
+Capacity: 7.3 GiB
+Bus Width: 8-bit
+User Capacity: 7.3 GiB WRREL
+Boot Capacity: 4 MiB ENH
+RPMB Capacity: 512 KiB ENH
+```
+
+`part list mmc 0` reads the current live GPT successfully. The current live disk has the stock FFU partition set plus an extra `HACK` entry at LBA `0x8bb7`; keep this distinct from the stock FFU GPT in `notes/partitions.md`. A direct read-only block test also succeeded: `mmc read 0x82000000 0 1` read one block, the PMBR signature at `0x820001fe` was `55 aa`, and `crc32 0x82000000 0x200` returned `9c6b8c10`.
 
 The `oem run` command takes the U-Boot command after a colon:
 
