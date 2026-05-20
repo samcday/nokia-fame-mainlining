@@ -9,10 +9,10 @@ The current unit has been unlocked with `~/src/lp-externals`, but this workspace
 | Lumia BootMgr USB | Candidate | Exposes `0421:066e` and `NOK*` protocol. |
 | FlashApp/PhoneInfoApp | Candidate | `lp-externals` can switch/read inventory safely. |
 | EFIESP | Extracted from stock FFU | FAT16 image at stock GPT LBA `131072`, size `67108864`. |
-| ARM UEFI payload | Pending live test | Need to prove what the unlocked UEFI environment will load from ESP. |
-| U-Boot as ARM EFI app | Blocked | Current U-Boot `CONFIG_EFI_APP` path is x86-gated. |
+| ARM UEFI payload | Proven | The unlocked UEFI fallback accepts `IMAGE_FILE_MACHINE_THUMB (0x1C2)` EFI applications from `\efi\boot\bootarm.efi`; `ConOut` and GOP BLT work. |
+| U-Boot as ARM EFI app | Proven to main loop | Local U-Boot ARM32 EFI-app patches produce a Lumia-loadable THUMB PE/COFF image that reaches the U-Boot main loop. |
 | Raw ARM32 U-Boot payload | Hypothesis | Samsung Express patches are reusable, but handoff/debug route is not proven. |
-| U-Boot fastboot | High risk | MSM8227 USB is old ChipIdea/ULPI-era; no UART fallback. |
+| U-Boot fastboot | Prepared, untested | A ChipIdea/ULPI gadget candidate is packaged, but has not been written to live EFIESP. |
 
 ## EFIESP Findings
 
@@ -431,3 +431,61 @@ cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=fa
 ```
 
 Physical observation from this run: the expected red/white tight-stride marker appeared at the bottom right. This solidifies the display model for direct scanout on this unit: although GOP reports `PixelsPerScanLine = 800`, the visible direct framebuffer is the tight `480 * 800 * 4 = 1536000` byte allocation at `0x80400000`, so direct writers must use a `480` pixel / `1920` byte stride. GOP BLT remains the cleanest firmware display path, but tight-stride direct stores are also visible.
+
+## U-Boot EFI App Debrief
+
+The first U-Boot EFI-app fastboot/UMS candidate uses the proven ARM32 EFI app path and an embedded Fame/MSM8960-style `qcom,ci-hdrc` USB node at `0x12500000`. It enables EFI GOP video with a framebuffer-size stride clamp, Qualcomm ULPI PHY `qcom,init-seq`, ChipIdea gadget fastboot, and a fallback boot menu.
+
+First live result from the initial `vidconsole` environment: the device rebooted immediately after printing `EFI GOP stride exceeds framebuffer size, using visible width`. That warning is emitted before U-Boot's video uclass clears the framebuffer for `vidconsole`, so the next candidate leaves output on EFI `serial`/`ConOut` only. `CONFIG_VIDEO_EFI` remains built in for later manual probing, but automatic boot no longer asks for `vidconsole`.
+
+Second live result from the serial-only console environment: the device appeared to hang after printing `ofnode_read_prop: qcom,init-seq:`. That line is a debug prefix emitted by U-Boot's OF property reader and does not prove the property read hung; the likely next operation is the Qualcomm ULPI PHY setup path. The host also observed a new high-speed USB enumeration attempt with `device descriptor read/64, error -71`, which is a useful sign that the ChipIdea gadget path may have asserted pull-up but failed before a valid descriptor transfer.
+
+This avenue is parked. Current U-Boot is running as `u-boot-app.efi`, not as a takeover payload. In this mode U-Boot does not call `ExitBootServices()`; it keeps UEFI Boot Services alive and even uses them for EFI `serial`/`ConOut` and delays. That makes direct hardware ownership fragile: U-Boot pokes USB and framebuffer hardware while firmware services may still own state, timers, and protocols. A later `bootz` from this mode would jump to Linux without a clean UEFI `ExitBootServices()` handoff, so it is not a sound final chainloader path.
+
+Future work should prefer one of these paths instead:
+
+1. Debug direct Linux EFI-stub boot, where Linux itself is the EFI application and can call `ExitBootServices()` correctly.
+2. Build a small ARM EFI Linux loader that stays within UEFI rules and leaves `ExitBootServices()` to Linux.
+3. Port the U-Boot EFI payload/stub model to ARM32 if U-Boot must own hardware before Linux. This is conceptually the right U-Boot takeover model, but upstream's payload support is currently x86-centric.
+
+Prepared artifacts, not written to the device by the assistant:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| U-Boot EFI app, serial-only console | `out/fame/uefi-test/u-boot-app-fame-udc-fastboot-serial-only.efi` | `483840` | `ad479aac9d687fd1bc0e9372c67389263ad38c754a3c048d7c0a617ed5669d11` |
+| U-Boot fastboot EFIESP, serial-only console | `out/fame/uefi-test/EFIESP-u-boot-fame-udc-fastboot-serial-only.img` | `67108864` | `c128626e57f3271ffebdc93b66e2ae499d02d007fd0333af85cec6b688f3d651` |
+
+The shorter artifact names `out/fame/uefi-test/u-boot-app-fame-udc-fastboot.efi` and `out/fame/uefi-test/EFIESP-u-boot-fame-udc-fastboot.img` currently contain the same serial-only build.
+
+The EFI app header checks as `IMAGE_FILE_MACHINE_THUMB (0x1C2)`, PE32, `IMAGE_SUBSYSTEM_EFI_APPLICATION`, entrypoint `0x1001`, `ImageBase = 0x400000`, and a base-relocation directory at RVA `0x76000`.
+
+EFIESP layout for the candidate:
+
+| ESP Path | Source |
+| --- | --- |
+| `/efi/boot/bootarm.efi` | `out/fame/u-boot-efi-arm-app32/u-boot-app.efi` |
+| `/qcom-msm8227-nokia-fame.dtb` | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` |
+
+Generated U-Boot environment highlights:
+
+```text
+stdin=serial
+stdout=serial
+stderr=serial
+bootcmd=run fastboot; run menucmd
+fastboot=fastboot -l $fastboot_addr_r -s $fastboot_size usb 0
+fastboot_bootcmd=run load_fdt && bootz $fastboot_addr_r - $fdt_addr_r
+load_fdt=fatload efi 0:EFIESP $fdt_addr_r /$fdtfile || fatload efi 0:21 $fdt_addr_r /$fdtfile
+ums_efiesp=echo Exporting EFIESP over USB mass storage; ums 0 efi 0:EFIESP || ums 0 efi 0:21
+```
+
+Archived guarded write sequence, only after explicit approval to write live EFIESP:
+
+```sh
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true switch flash
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true flash raw-write-partition --dry-run EFIESP /var/home/sam/src/nokia-fame-mainlining/out/fame/uefi-test/EFIESP-u-boot-fame-udc-fastboot-serial-only.img
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true flash raw-write-partition --confirm-raw-write EFIESP /var/home/sam/src/nokia-fame-mainlining/out/fame/uefi-test/EFIESP-u-boot-fame-udc-fastboot-serial-only.img
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=false reset
+```
+
+Do not spend further bring-up time on this exact `u-boot-app.efi` fastboot path unless the goal is explicitly diagnostic. If it is revisited, reduce OF/debug verbosity, add explicit progress prints around `ehci_usb_probe()`, `generic_setup_phy()`, ULPI writes, `usb_setup_ehci_gadget()`, and descriptor handling, and consider a no-U-Boot-PHY-touch candidate first.

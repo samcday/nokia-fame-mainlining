@@ -28,6 +28,8 @@ From `RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu` a
 | Display | PCFG panel `Teisko`, 480x800 24bpp DSI, two lanes, pixel clock `52598700` Hz | `notes/display.md` | A |
 | Storage controllers | ACPI `SDC1` and `SDC3` use HID `QCOM7002`; `SDC1` has child `EMMC` with `_RMV` returning `Zero`; `SDC3` resource buffer includes `GIO0` pin 94 | `dsdt.dsl:18048-18118` | A, GPIO flags pending |
 | USB function | ACPI `UFN1` uses HID `QCOM01C0`, base `0x12500000`, and `PHYC` config method | `dsdt.dsl:18376-18440` | A |
+| USB PHY init | ACPI `UFN1.PHYC` returns vendor ULPI register writes `(0x81, 0x38)` and `(0x82, 0x14)`; for Linux-style `qcom,init-seq` this is represented as offsets `<0x01 0x38 0x02 0x14>` from ULPI vendor base `0x80` | `dsdt.dsl:18422-18438`, `linux/drivers/phy/qualcomm/phy-qcom-usb-hs.c:144-146` | A |
+| Debug UART | Device UART output is now available after hardware rework. Host-to-device TX is suspected broken after reassembly, but device-to-host RX is enough for kernel/U-Boot logs. | Live hardware observation, 2026-05-20 | B |
 | Touch resources | ACPI `TCH1` HID `NOKIA_TOUCH`, depends on `I2C3` and `GIO0`; resource buffer decodes to I2C address `0x4B`, `GpioInt` pin 11, and `GpioIo` pin 52 | `dsdt.dsl:21056-21085` | A, GPIO flags pending |
 | Sensors | SSDT has accelerometer `KXTNK`, ALS/PRX candidates `QPDS_T900_*` and `LTR_554ALS_02_*` on `IC12` | `ssdt.dsl:30-582` | A, population decision pending |
 | WLAN/BT/FM | ACPI `RIVA` HID `QCOM0E20` with nested `BTH0`, `QWLN`, `FMT0`, and `NOKIA_WLAN_PROXY` | `dsdt.dsl:17710-17801` | A |
