@@ -652,19 +652,19 @@ Build helper:
 
 The helper builds the Linux Fame DTB, builds U-Boot `nokia_fame_lk_fastboot_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, verifies `CONFIG_TEXT_BASE == 0x80208000`, and wraps `u-boot-dtb.bin` in an Android boot image header v0.
 
-Prepared artifacts, not live-tested yet:
+Prepared artifacts from the chain-capable rebuild:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
 | Fame DTB with USB node | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `3459` | `36a60e7078829928d85fc642fcadbc2fada723130184b98113b1ab9eefc4fd91` |
-| LK-chain U-Boot payload with `oem run`/`oem console` | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `238219` | `1e269d8d501121351da9f15303a860b42abf16815e752fb58ffe1ac3db265fa8` |
-| Android boot image with `oem run`/`oem console` | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `245760` | `edabaa8db7834ecff32a1159f9f151175a46422631a5f0240565d7f5b2e67dad` |
+| LK-chain U-Boot payload with `bootm`/`abootimg` | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `298843` | `b7b23be09787be153c7aa74f19ddd8180439e8f4b0130272f604d76f5dfa644a` |
+| Android boot image with `bootm`/`abootimg` | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `303104` | `fc92290e07b68d68b680b987a6522330f039cc1c3d3bb2917bb2dba8071cfa01` |
 
 `unpack_bootimg` verification:
 
 ```text
 boot magic: ANDROID!
-kernel_size: 238219
+kernel_size: 298843
 kernel load address: 0x80208000
 ramdisk size: 0
 kernel tags load address: 0x80200100
@@ -678,20 +678,38 @@ U-Boot config highlights:
 ```text
 CONFIG_TEXT_BASE=0x80208000
 CONFIG_BOOTCOMMAND="fastboot usb 0"
+CONFIG_FASTBOOT_BUF_ADDR=0x82000000
+CONFIG_CMD_BOOTM=y
+CONFIG_CMD_BOOTZ=y
+CONFIG_CMD_ABOOTIMG=y
+CONFIG_CMD_ADTIMG=y
 CONFIG_CMD_FASTBOOT=y
+# CONFIG_ANDROID_BOOT_IMAGE_IGNORE_BLOB_ADDR is not set
 CONFIG_USB_FUNCTION_FASTBOOT=y
 CONFIG_CI_UDC=y
 CONFIG_USB_EHCI_MSM=y
 CONFIG_USB_ULPI_VIEWPORT=y
 CONFIG_MSM8916_USB_PHY=y
 CONFIG_CONSOLE_RECORD=y
+CONFIG_CONSOLE_RECORD_OUT_SIZE=0x100000
 CONFIG_FASTBOOT_OEM_RUN=y
 CONFIG_FASTBOOT_CMD_OEM_CONSOLE=y
-CONFIG_FASTBOOT_BUF_ADDR=0x82000000
 CONFIG_FASTBOOT_BUF_SIZE=0x04000000
 ```
 
 First live result reported by the user, before adding `oem run`: the LK-chain image booted cleanly, U-Boot's ChipIdea/ULPI gadget enumerated as fastboot, and host `fastboot getvar all` completed. Reported values included `version: 0.4`, `version-bootloader: U-Boot 2026.07-rc2-00022-g90434f09f01e-`, `downloadsize`/`max-download-size: 0x04000000`, `product: nokia-fame`, and `is-userspace: no`.
+
+Live probe of the `oem console` image showed `fastboot oem console` failed with `remote: 'Error reading console'`, likely because the console record overflow flag was set by boot-time output before the host tried to drain it. The chain-capable rebuild resets the console recorder before each `oem run` command, increases `CONFIG_CONSOLE_RECORD_OUT_SIZE` to `0x100000`, reports/clears console overflow instead of permanently failing `oem console`, and treats an empty console as OKAY.
+
+Live result after rebuilding: `fastboot oem run:version` followed by `fastboot oem console` returns the command output, and a second empty `fastboot oem console` returns OKAY. `bootm` and `abootimg` are available over `oem run`.
+
+The first nested `fastboot boot` attempt with plain `bootm 0x82000000` parsed and loaded the Android image, then continued into the Linux boot path and failed with `FDT and ATAGS support not compiled in`. The working chain command is:
+
+```text
+bootm start 0x82000000; bootm loados; go 0x80208000
+```
+
+This command loads the Android boot-image kernel payload to `CONFIG_TEXT_BASE` and jumps to the fixed-link U-Boot entry instead of invoking Linux `bootm` handoff. The final rebuild installs it as `fastboot_bootcmd` for the Fame-compatible ARM32 Snapdragon path. Live U-Boot-to-U-Boot chaining with the final image re-enumerated fastboot successfully; one host `getvar all` raced the USB disconnect/reconnect with `No such device`, and a retry completed normally.
 
 The `oem run` command takes the U-Boot command after a colon:
 

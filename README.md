@@ -45,11 +45,11 @@ FFU  = RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu
 | BootMgr inventory | Candidate | `lp-externals` has read-only `NOKV` and `NOKT` support. |
 | FFU inventory | Missing | No local FFU artifacts found during bootstrap. |
 | Kernel DTS | Candidate | `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts` exists and its DTB builds with `qcom_defconfig`. |
-| U-Boot | Working | Raw APPSBL UART reaches a prompt; LK-chain Android boot image enumerates U-Boot USB fastboot. |
+| U-Boot | Working | Raw APPSBL UART reaches a prompt; LK-chain Android boot image enumerates U-Boot USB fastboot and can chain U-Boot-to-U-Boot. |
 | UART | Candidate | Device-to-host UART output is available; host-to-device RX is suspected damaged. |
 | Display | Hypothesis | Android4Lumia says Orise-based 800x480; ACPI/PCFG extraction is the next high-trust path. |
 | Touch | Hypothesis | Android4Lumia says Synaptics; Fame DTS has disabled RMI4 sketch. |
-| USB gadget/UDC | Working | U-Boot ChipIdea/ULPI fastboot responds to `fastboot getvar all`; current rebuild enables `oem run` plus console capture for remote U-Boot commands. |
+| USB gadget/UDC | Working | U-Boot ChipIdea/ULPI fastboot responds to `fastboot getvar all`; current rebuild enables `bootm`/`abootimg`, `oem run`, console capture, and nested `fastboot boot`. |
 
 ## Useful Files
 
