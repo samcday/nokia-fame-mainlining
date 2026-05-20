@@ -29,6 +29,7 @@ From `RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu` a
 | Storage controllers | ACPI `SDC1` and `SDC3` use HID `QCOM7002`; `SDC1` has child `EMMC` with `_RMV` returning `Zero`; `SDC3` resource buffer includes `GIO0` pin 94 | `dsdt.dsl:18048-18118` | A, GPIO flags pending |
 | USB function | ACPI `UFN1` uses HID `QCOM01C0`, base `0x12500000`, and `PHYC` config method | `dsdt.dsl:18376-18440` | A |
 | USB PHY init | ACPI `UFN1.PHYC` returns vendor ULPI register writes `(0x81, 0x38)` and `(0x82, 0x14)`; for Linux-style `qcom,init-seq` this is represented as offsets `<0x01 0x38 0x02 0x14>` from ULPI vendor base `0x80` | `dsdt.dsl:18422-18438`, `linux/drivers/phy/qualcomm/phy-qcom-usb-hs.c:144-146` | A |
+| USB controller shape | Android4Lumia LK for its MSM8960/MSM8227 target defines `MSM_USB_BASE` as `0x12500000`, `INT_USB_HS` as `GIC_SPI_START + 100`, and USB HS1 clock/reset registers matching the mainline MSM8960 GCC binding; mainline MSM8960 DTS uses the same `qcom,ci-hdrc` two-window register shape, GIC SPI 100, USB HS1 clocks/reset, and nested ULPI `qcom,usb-hs-phy-msm8960` PHY. | `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/iomap.h:72`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/irqs.h:44-53`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/clock.h:97-100`, `linux/arch/arm/boot/dts/qcom/qcom-msm8960.dtsi:505-534` | C/E |
 | Debug UART | Device UART output is now available after hardware rework. Host-to-device TX is suspected broken after reassembly, but device-to-host RX is enough for kernel/U-Boot logs. | Live hardware observation, 2026-05-20 | B |
 | Debug UART mapping | Android4Lumia LK maps MSM8227/MSM8627 boards to `LINUX_MACHTYPE_8627_*`, then initializes GSBI5 UARTDM with GSBI base `0x16400000` and UART base `0x16440000`; the Samsung MSM8930 sibling DTS uses the same GSBI5/UARTDM addresses, `qcom,msm-uartdm-v1.3` compatible, GIC SPI 154 interrupt, and GSBI5 GCC clocks. | `community/android4lumia-lk-msm8227:target/msm8960/init.c:331-334,398-408`, `/var/home/sam/src/samsung-expressltexx/linux/arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:354-377` | C/E |
 | Touch resources | ACPI `TCH1` HID `NOKIA_TOUCH`, depends on `I2C3` and `GIO0`; resource buffer decodes to I2C address `0x4B`, `GpioInt` pin 11, and `GpioIo` pin 52 | `dsdt.dsl:21056-21085` | A, GPIO flags pending |
@@ -69,7 +70,7 @@ From `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts`:
 | Keys | PM8038 GPIO 3/8/10/11 for volume/camera keys | C |
 | eMMC | SDCC1 with PM8038 L5/L11 supplies | C |
 | External SD | SDCC3 with PM8038 L6/L22 supplies, currently `non-removable` | C, suspicious |
-| USB | `usb1` enabled as `otg`, HS PHY supplied by PM8038 L3/L4 | C |
+| USB | `usb1` enabled as `peripheral`, HS PHY uses ACPI-derived ULPI init sequence; regulator supplies still not modeled | A/C, supply sequencing pending |
 | WCNSS/Riva | WLAN pins GPIO84-88, BT pins GPIO28/29/83, WCN3660-style iris | C |
 | Touch | Disabled Synaptics RMI4 sketch at I2C `0x4b`, IRQ GPIO11, reset GPIO52 | C, disabled |
 

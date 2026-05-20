@@ -11,8 +11,8 @@ The current unit has been unlocked with `~/src/lp-externals`, but this workspace
 | EFIESP | Extracted from stock FFU | FAT16 image at stock GPT LBA `131072`, size `67108864`. |
 | ARM UEFI payload | Proven | The unlocked UEFI fallback accepts `IMAGE_FILE_MACHINE_THUMB (0x1C2)` EFI applications from `\efi\boot\bootarm.efi`; `ConOut` and GOP BLT work. |
 | U-Boot as ARM EFI app | Proven to main loop | Local U-Boot ARM32 EFI-app patches produce a Lumia-loadable THUMB PE/COFF image that reaches the U-Boot main loop. |
-| Raw ARM32 U-Boot payload | Hypothesis | Samsung Express patches are reusable, but handoff/debug route is not proven. |
-| U-Boot fastboot | Prepared, untested | A ChipIdea/ULPI gadget candidate is packaged, but has not been written to live EFIESP. |
+| Raw ARM32 U-Boot payload | Proven to prompt | Unsigned short-header APPSBL at `0x88f00000` reaches U-Boot over GSBI5 UART. |
+| LK-chain U-Boot fastboot | Prepared, untested | Android boot image packages U-Boot at LK's `0x80208000` kernel load address and auto-runs `fastboot usb 0`. |
 
 ## EFIESP Findings
 
@@ -639,6 +639,76 @@ Comparison with the current U-Boot smoke MBN:
 Interpretation: Android4Lumia LK does not reveal a different APPSBL wrapper, and the live test proves one is not needed on this unit. LK has the same unsigned short-header structure as the current U-Boot candidate, just with a larger and naturally aligned code payload. The practical U-Boot cleanup after this result is to keep `TEXT_BASE=0x88f00000` and pad the U-Boot payload before MBN header generation so the zero-size signature/cert pointers are aligned.
 
 No local stock UEFI or FFU image was present under this workspace during this comparison.
+
+## LK-Chain U-Boot Fastboot Candidate
+
+With LK proven as the persistent recovery APPSBL, the next U-Boot test path is `fastboot boot` from LK instead of writing raw APPSBL images. This keeps the known-good LK in `UEFI` and loads U-Boot as a normal Android boot image kernel payload at the downstream kernel address window.
+
+Build helper:
+
+```sh
+./build-u-boot-lk-fastboot.sh
+```
+
+The helper builds the Linux Fame DTB, builds U-Boot `nokia_fame_lk_fastboot_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, verifies `CONFIG_TEXT_BASE == 0x80208000`, and wraps `u-boot-dtb.bin` in an Android boot image header v0.
+
+Prepared artifacts, not live-tested yet:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| Fame DTB with USB node | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `3459` | `36a60e7078829928d85fc642fcadbc2fada723130184b98113b1ab9eefc4fd91` |
+| LK-chain U-Boot payload with `oem run`/`oem console` | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `238219` | `1e269d8d501121351da9f15303a860b42abf16815e752fb58ffe1ac3db265fa8` |
+| Android boot image with `oem run`/`oem console` | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `245760` | `edabaa8db7834ecff32a1159f9f151175a46422631a5f0240565d7f5b2e67dad` |
+
+`unpack_bootimg` verification:
+
+```text
+boot magic: ANDROID!
+kernel_size: 238219
+kernel load address: 0x80208000
+ramdisk size: 0
+kernel tags load address: 0x80200100
+page size: 4096
+boot image header version: 0
+product name: nokia-fame
+```
+
+U-Boot config highlights:
+
+```text
+CONFIG_TEXT_BASE=0x80208000
+CONFIG_BOOTCOMMAND="fastboot usb 0"
+CONFIG_CMD_FASTBOOT=y
+CONFIG_USB_FUNCTION_FASTBOOT=y
+CONFIG_CI_UDC=y
+CONFIG_USB_EHCI_MSM=y
+CONFIG_USB_ULPI_VIEWPORT=y
+CONFIG_MSM8916_USB_PHY=y
+CONFIG_CONSOLE_RECORD=y
+CONFIG_FASTBOOT_OEM_RUN=y
+CONFIG_FASTBOOT_CMD_OEM_CONSOLE=y
+CONFIG_FASTBOOT_BUF_ADDR=0x82000000
+CONFIG_FASTBOOT_BUF_SIZE=0x04000000
+```
+
+First live result reported by the user, before adding `oem run`: the LK-chain image booted cleanly, U-Boot's ChipIdea/ULPI gadget enumerated as fastboot, and host `fastboot getvar all` completed. Reported values included `version: 0.4`, `version-bootloader: U-Boot 2026.07-rc2-00022-g90434f09f01e-`, `downloadsize`/`max-download-size: 0x04000000`, `product: nokia-fame`, and `is-userspace: no`.
+
+The `oem run` command takes the U-Boot command after a colon:
+
+```sh
+fastboot oem run:version
+fastboot oem run:bdinfo
+fastboot oem 'run:dm tree'
+fastboot oem console
+```
+
+Live test command from the working LK fastboot prompt:
+
+```sh
+fastboot boot /var/home/sam/src/nokia-fame-mainlining/out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img
+```
+
+This is not a write. Expected behavior is U-Boot UART output, a one-second autoboot window, then `fastboot usb 0`. If the ChipIdea/ULPI path fails cleanly, U-Boot should return to its UART prompt; if it hangs, reset back into the persistent LK APPSBL and continue from LK fastboot.
 
 ## Raw U-Boot APPSBL Result And UART Stage0 Rescue
 

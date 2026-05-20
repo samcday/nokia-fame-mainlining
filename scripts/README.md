@@ -15,3 +15,4 @@ Top-level helpers currently live at repository root when they are the primary br
 | Script | Purpose |
 | --- | --- |
 | `build-u-boot-uefi-smoke.sh` | Builds the canonical Linux DTB, raw Fame U-Boot, and a padded UART smoke image for the stock `UEFI` partition. |
+| `build-u-boot-lk-fastboot.sh` | Builds the canonical Linux DTB, LK-chain U-Boot fastboot config, and Android boot image for `fastboot boot` from LK. |
