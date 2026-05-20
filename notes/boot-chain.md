@@ -489,3 +489,198 @@ cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=fa
 ```
 
 Do not spend further bring-up time on this exact `u-boot-app.efi` fastboot path unless the goal is explicitly diagnostic. If it is revisited, reduce OF/debug verbosity, add explicit progress prints around `ehci_usb_probe()`, `generic_setup_phy()`, ULPI writes, `usb_setup_ehci_gadget()`, and descriptor handling, and consider a no-U-Boot-PHY-touch candidate first.
+
+## Raw U-Boot UART Smoke Candidate
+
+With device-to-host UART now available, the first non-EFI U-Boot candidate is intentionally UART-only. The build path uses `linux/` as the canonical DT source and feeds the resulting DTB to U-Boot with `EXT_DTB`.
+
+Source/layout breadcrumbs:
+
+| Fact | Source |
+| --- | --- |
+| Stock `UEFI` partition is 5000 sectors / `2560000` bytes | `notes/partitions.md:38`, `notes/partitions.md:68` |
+| Lumia UEFI images use a short Qualcomm partition header and `image_src=0` means image bytes start after the `0x28`-byte header | `prior-art/WPinternals/WPinternals/Models/QualcommPartition.cs:99-131`, `prior-art/WPinternals/WPinternals/Models/UEFI.cs:52-56` |
+| MSM8960-family LK APPSBL memory base is `0x88F00000`, size `0x00100000`; `0x80200000` is the downstream kernel base, not the appsbl base | `prior-art/mainline4lumia-lk2nd/target/msm8960/rules.mk:7-10` |
+| U-Boot UART smoke `TEXT_BASE` / MBN destination is now `0x88F00000` | `u-boot/configs/nokia_fame_defconfig`, `build-u-boot-uefi-smoke.sh` `TEXT_BASE` default |
+| GSBI5 UARTDM base and interrupt are source-backed before DTS enablement | `notes/hardware-inventory.md` debug UART mapping row |
+
+First live raw-`UEFI` test result, reported by the user after flashing the original `0x80208000` candidate:
+
+```text
+B -    553880 - sbl3_hw_init, Start
+D -         0 - sbl3_hw_init, Delta
+B -    560376 - boot_flash_init, Start
+D -     22356 - boot_flash_init, Delta
+B -    588558 - boot_smem_init, Start
+D -       732 - boot_smem_init, Delta
+B -    595421 - sbl3_hw_init_secondary, Start
+B -    733647 - pm_pwron_regulate_ calls...
+B -    736392 - pm_pwron_regulate_ calls done.
+D -    141001 - sbl3_hw_init_secondary, Delta
+B -    745084 - VIBRA
+
+B -    878461 - Image Load, Start
+```
+
+Interpretation: no U-Boot output was observed, and the SBL3 log stopped at `Image Load, Start`. A later Android4Lumia LK control image was accepted by SBL3 with the same unsigned short-header APPSBL style, so this first U-Boot failure is now most likely due to its incorrect `0x80208000` destination rather than a signature/certificate requirement. The next U-Boot candidate moves U-Boot into the MSM8960 APPSBL window at `0x88F00000`.
+
+Follow-up recovery observation: after this failed boot the phone enumerated as Qualcomm `05c6:9006` / `QHSUSB_DLOAD` mass storage, exposing raw eMMC to Linux. The live `UEFI` partition was `/dev/sda7` and `BACKUP_UEFI` was `/dev/sda14`; both were 5000 sectors. Direct reads showed `/dev/sda7` still matched the failed first candidate hash `5299aacfa27de4b14af9ce65f15f88c23dbffcd2c71caa00a613b2a8973036d7`, while `/dev/sda14` hashed as `7a3f72b0923da7844fe7d21832df0b9237e768c62bb2ea4a85ef69328ab77b79`. Stock `UEFI` was restored by copying `BACKUP_UEFI` over `UEFI`; a direct readback of `/dev/sda7` then matched `/dev/sda14` at `7a3f72b0923da7844fe7d21832df0b9237e768c62bb2ea4a85ef69328ab77b79`.
+
+Build helper:
+
+```sh
+./build-u-boot-uefi-smoke.sh
+```
+
+This helper builds `make -C linux ... dtbs`, builds U-Boot `nokia_fame_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, emits a Qualcomm appsbl-style MBN header, and pads the result to exactly the stock `UEFI` partition size. It does not flash the device.
+
+Prepared artifacts from the adjusted APPSBL-addressed build, not written to the device by the assistant:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| Fame DTB | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `2625` | `cd446d1bc898d32fe33a6f7c3d8627bb5c54afc4db23f4677208612026dad664` |
+| Raw U-Boot with external DTB | `out/fame/u-boot-fame-smoke/u-boot-dtb.bin` | `179177` | `72366c52091877e53feae80963703d8248b4d69254a5664463aaa9f266ebdfc1` |
+| Qualcomm appsbl-style MBN | `out/fame/u-boot-uefi-smoke/u-boot-fame-uart-smoke.mbn` | `179224` | `714972f71de3bdaac632941abeff58d53a175a3d70fd0291bd05e126e0b862e4` |
+| Padded `UEFI` candidate | `out/fame/u-boot-uefi-smoke/UEFI-u-boot-fame-uart-smoke.bin` | `2560000` | `7d71fba4e17a672e59af257776b2bb369c177d1b8904ea1b320023ca0cd6780b` |
+
+The MBN packaging pads the `179177`-byte `u-boot-dtb.bin` payload to an 8-byte boundary before calculating the Qualcomm header fields. The copied APPSBL image length is therefore `179184` bytes, matching the bytes after the `0x28`-byte header.
+
+MBN header spot-check from the built candidate:
+
+```text
+image_id=0x00000005
+flash_partition_version=0x00000003
+image_src=0x00000000
+image_dest=0x88f00000
+image_size=0x0002bbf0
+code_size=0x0002bbf0
+signature_ptr=0x88f2bbf0
+signature_size=0
+cert_chain_ptr=0x88f2bbf0
+cert_chain_size=0
+```
+
+Validation results:
+
+```sh
+./build-u-boot-uefi-smoke.sh
+bash -n ./build-u-boot-uefi-smoke.sh
+arm-none-eabi-readelf -h out/fame/u-boot-fame-smoke/u-boot
+make -C linux O=/var/home/sam/src/nokia-fame-mainlining/out/fame/linux-build ARCH=arm CROSS_COMPILE=arm-none-eabi- W=1 qcom/qcom-msm8227-nokia-fame.dtb
+```
+
+The build and syntax checks completed successfully, and `readelf` reports U-Boot entry point `0x88f00000`. Targeted `CHECK_DTBS=y qcom/qcom-msm8227-nokia-fame.dtb` did not reach DT validation because the host `dtschema` version check failed first with `ERROR: dtschema minimum version is v2023.9`.
+
+Guarded live-device sequence printed by the helper, only after explicit approval to write live `UEFI`:
+
+```sh
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true switch flash
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true flash raw-write-partition --dry-run UEFI /var/home/sam/src/nokia-fame-mainlining/out/fame/u-boot-uefi-smoke/UEFI-u-boot-fame-uart-smoke.bin
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=true flash raw-write-partition --confirm-raw-write UEFI /var/home/sam/src/nokia-fame-mainlining/out/fame/u-boot-uefi-smoke/UEFI-u-boot-fame-uart-smoke.bin
+cargo run --manifest-path /var/home/sam/src/lp-externals/Cargo.toml -- --wait=false reset
+```
+
+## Android4Lumia LK APPSBL Control
+
+The Android4Lumia LK submodule worktree in `community/android4lumia-lk-msm8227` had all tracked files deleted at the time of this check, so the control build was done from a detached temporary worktree at `out/fame/android4lumia-lk-msm8227-src` without changing the submodule state.
+
+Build command:
+
+```sh
+make PROJECT=msm8960 BOOTLOADER_OUT=/var/home/sam/src/nokia-fame-mainlining/out/fame/android4lumia-lk-build clean
+make TOOLCHAIN_PREFIX=arm-none-eabi- CC="arm-none-eabi-gcc -fcommon -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=return-mismatch" BOOTLOADER_OUT=/var/home/sam/src/nokia-fame-mainlining/out/fame/android4lumia-lk-build msm8960 EMMC_BOOT=1
+```
+
+The compatibility flags are only for building this old LK tree with Fedora/GCC 15. They do not change source files. The build emits `Image Destination Pointer: 0x88f00000`, `lk.bin`, `EMMCBOOT.MBN`, and `emmc_appsboot.mbn`.
+
+Prepared artifacts from the LK control build, not written to the device by the assistant:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| LK raw binary | `out/fame/android4lumia-lk-build/build-msm8960/lk.bin` | `452088` | `cc5f046131af696f0eef3e0794d06a4f9d28e396b337884e2d8f0c138a75d12d` |
+| LK Qualcomm appsbl-style MBN | `out/fame/android4lumia-lk-build/build-msm8960/EMMCBOOT.MBN` | `452128` | `3b1710d6b26cb47cc616ab761436c56ccd4418c75b8f58fcbdaa58caf7c10fe9` |
+| Padded LK `UEFI` candidate | `out/fame/android4lumia-lk-build/UEFI-android4lumia-lk-msm8960.bin` | `2560000` | `f2778f084de34b5802a68c498249ec9e5f18fa5635ddf8eb249bd8e89e58da69` |
+
+Live result reported by the user: the padded LK `UEFI` candidate was accepted by SBL3. The SBL log included `APPSBL Image Loaded`, LK printed `Android Bootloader - UART_DM Initialized!!!`, entered fastboot, and processed `getvar`/`oem lk_log` commands. `fastboot getvar all` reported product `MSM8960`, kernel `lk`, version `0.5`, and `max-download-size` `0x30000000`; the device serial was intentionally not recorded here. This proves stock SBL3 on this unit can load an unsigned short-header APPSBL image at `0x88f00000`.
+
+`lp-externals qcom image-info` for the LK `EMMCBOOT.MBN`:
+
+```text
+source format: raw
+source bytes: 452128
+header type: short
+image offset: 0x00000028
+header offset: 0x00000008
+image address: 0x88f00000
+image size: 452088
+code size: 452088
+signature address: 0x88f6e5f8
+signature size: 0
+certificates address: 0x88f6e5f8
+certificates size: 0
+root key hash: 9f27065873d09a099ca52ffa34bb856ee4f5fa4e1ff8fe0a6e4158307d669f46
+```
+
+The parsed `root key hash` is not evidence that this MBN carries an APPSBL cert chain: `lp-externals` currently derives that value by scanning the whole image for DER certificates, and this LK build links OpenSSL data. The authoritative MBN fields still show `signature size: 0` and `certificates size: 0`.
+
+Comparison with the current U-Boot smoke MBN:
+
+| Field | LK `EMMCBOOT.MBN` | U-Boot smoke MBN |
+| --- | --- | --- |
+| Header type | `short` | `short` |
+| Image offset | `0x00000028` | `0x00000028` |
+| Header offset | `0x00000008` | `0x00000008` |
+| Image address | `0x88f00000` | `0x88f00000` |
+| Image size | `452088` | `179184` |
+| Code size | `452088` | `179184` |
+| Signature size | `0` | `0` |
+| Certificate chain size | `0` | `0` |
+
+Interpretation: Android4Lumia LK does not reveal a different APPSBL wrapper, and the live test proves one is not needed on this unit. LK has the same unsigned short-header structure as the current U-Boot candidate, just with a larger and naturally aligned code payload. The practical U-Boot cleanup after this result is to keep `TEXT_BASE=0x88f00000` and pad the U-Boot payload before MBN header generation so the zero-size signature/cert pointers are aligned.
+
+No local stock UEFI or FFU image was present under this workspace during this comparison.
+
+## Raw U-Boot APPSBL Result And UART Stage0 Rescue
+
+Live result reported by the user: the aligned U-Boot APPSBL image was accepted by SBL3. The SBL log included `APPSBL Image Loaded`, then U-Boot reached the relocated main loop and prompt over GSBI5 UART. This confirms the raw U-Boot APPSBL path is viable when the MBN destination is `0x88f00000` and the payload size/signature pointers are aligned.
+
+Useful U-Boot facts from the live prompt:
+
+| Fact | Value |
+| --- | --- |
+| Prompt reached | yes, `=>` |
+| Model | `Nokia Lumia 520` |
+| Console | `serial@16440000` |
+| DRAM bank 0 | `0x80200000..0x88dfffff`, `0x08c00000` bytes |
+| DRAM bank 1 | `0x90000000..0x9fffffff`, `0x10000000` bytes |
+| Relocated U-Boot | `0x9ffd0000` |
+| FDT blob | `0x8ffb0490` |
+| Probed DM devices | root, SoC simple-bus, GSBI5 simple-bus, `serial@16440000` |
+
+The current smoke defconfig intentionally omitted most commands. The live command set included memory commands and `go`, but not `loadb`, `loads`, `mmc`, `usb`, `fastboot`, `ums`, or filesystem commands. `reset` failed with `System reset not supported on this platform`. Manual IMEM DLOAD cookie writes and PSHOLD/watchdog resets rebooted back into U-Boot, so they are not a reliable recovery path from this U-Boot context.
+
+The current recovery path is a UART bootstrap through U-Boot's `mw.l` and `go` commands:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| UART stage0 loader | `tools/uart-stage0/build/stage0.bin` | `752` | `b4135ba64ff75793c9adafa120d80a77a11fb0138fa8b4c525a18db176817447` |
+| Stage0 U-Boot paste script | `tools/uart-stage0/build/stage0-mw.txt` | generated | generated |
+| Stage0 host sender | `tools/uart-stage0/send-payload.py` | source | source |
+
+Stage0 protocol defaults:
+
+| Item | Value |
+| --- | --- |
+| Stage0 load/entry | `0x82000000` |
+| UART | GSBI5 UARTDM v1.3 at `0x16440000`, `115200 8n1` |
+| Default payload | `out/fame/android4lumia-lk-build/build-msm8960/lk.bin` |
+| Default payload load/entry | `0x88f00000` |
+
+Build and use:
+
+```sh
+tools/uart-stage0/build.sh
+tools/uart-stage0/send-payload.py --port /dev/ttyUSB0
+```
+
+If LK starts from RAM, immediately use LK fastboot to flash a persistent rescue APPSBL before rebooting. Restoring stock `UEFI.bin` gets back to BootMgr/FlashApp; flashing the LK padded `UEFI` candidate keeps a fastboot recovery APPSBL for more raw U-Boot bring-up.

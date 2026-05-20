@@ -1,0 +1,4 @@
+__pycache__/
+build/*
+!build/stage0.bin
+!build/stage0-mw.txt
