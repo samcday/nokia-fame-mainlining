@@ -798,11 +798,11 @@ Prepared artifacts from the APPSBL fastboot build:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Raw APPSBL U-Boot fastboot payload with external DTB | `out/fame/u-boot-fame-appsbl-fastboot/u-boot-dtb.bin` | `343004` | `53567b9a3eedcbd3ecd97907dc37a2387ab426d41bfcca2d0849fc714c132f74` |
-| Qualcomm appsbl-style MBN | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot.mbn` | `343048` | `a6af7276528810bced2d1209df6f220adb0b4e6cc55d2b6644c0caf112ae4c16` |
-| Padded `UEFI` candidate | `out/fame/u-boot-appsbl-fastboot/UEFI-u-boot-fame-appsbl-fastboot.bin` | `2560000` | `1c6b3e4be9acdd56d3763a96805c05c75db7cd7a0756d1669e22759f01ec3dc5` |
-| LK-safe trampoline kernel | `out/fame/u-boot-appsbl-fastboot/lk-trampoline-build/u-boot-fame-appsbl-fastboot-lk-trampoline-kernel.bin` | `347100` | `49a71d91534b91b8032cc2fb0ef62db80138bc0a3e1ac13fb69ae51a5ac2115a` |
-| LK-safe trampoline boot image | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot-lk-trampoline.img` | `352256` | `05721adb2b526f769050480fbb96803c3b3ba722fb1ece6f38fb6e6777125f43` |
+| Raw APPSBL U-Boot fastboot payload with external DTB | `out/fame/u-boot-fame-appsbl-fastboot/u-boot-dtb.bin` | `343416` | `6fc88113acbcd87667f056664b7211814d231e4148b4ff23c0a29ac158f6db20` |
+| Qualcomm appsbl-style MBN | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot.mbn` | `343456` | `ed7e7b7d213258452c10283a93ddc4b6fa2a7f16d2bf28de5f9b503291e54519` |
+| Padded `UEFI` candidate | `out/fame/u-boot-appsbl-fastboot/UEFI-u-boot-fame-appsbl-fastboot.bin` | `2560000` | `dab76b8c303e82a9a75aa355630a210c3120eb19d3b33c52c2e643eae40284f4` |
+| LK-safe trampoline kernel | `out/fame/u-boot-appsbl-fastboot/lk-trampoline-build/u-boot-fame-appsbl-fastboot-lk-trampoline-kernel.bin` | `347512` | `802f0da79bdccc78e98147041fe4e7d25ecaa9e53bf00f902205c20d8fade5c2` |
+| LK-safe trampoline boot image | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot-lk-trampoline.img` | `352256` | `a1d42bef13ef9244b5c68fa92449b8f79ccb1a74401908c473a63c03f077b4bd` |
 
 The raw APPSBL defconfig is `nokia_fame_appsbl_defconfig`. It links U-Boot at `0x88f00000`, auto-runs `fastboot usb 0`, enables the block-backed eMMC fastboot backend, and includes a minimal MSM8960 GCC provider for SDC1, USB HS1, and GSBI5 UART clocks. The existing LK-chain `fastboot_bootcmd` helper is gated to `CONFIG_NOKIA_FAME_LK_FASTBOOT_CHAIN` so it is not baked into this APPSBL target.
 
@@ -822,9 +822,9 @@ Prepared PIE test artifacts from `nokia_fame_appsbl_pie_defconfig`:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Position-independent APPSBL U-Boot payload with external DTB | `out/fame/u-boot-fame-appsbl-pie/u-boot-dtb.bin` | `343140` | `96739b063ced911459ceeb290cb3c8b78af5df361cf40357ace66e0a987b517d` |
-| Qualcomm appsbl-style PIE MBN | `out/fame/u-boot-appsbl-pie/u-boot-fame-appsbl-pie.mbn` | `343184` | `a3363f57b2276a872503cd3228fb0084a9c42a5e406135bf71f1fbd680c2404d` |
-| Padded PIE `UEFI` candidate | `out/fame/u-boot-appsbl-pie/UEFI-u-boot-fame-appsbl-pie.bin` | `2560000` | `5f17d8f5d66c1edf6c7298b694f7870c7f49728da7dccdd037b28c2f07263622` |
+| Position-independent APPSBL U-Boot payload with external DTB | `out/fame/u-boot-fame-appsbl-pie/u-boot-dtb.bin` | `343552` | `b93fd2c1df968b45b76d068eabe979ace973039e6687052599985bd0f6b98a4e` |
+| Qualcomm appsbl-style PIE MBN | `out/fame/u-boot-appsbl-pie/u-boot-fame-appsbl-pie.mbn` | `343592` | `6772724c5d44530815693bca8f2ede319825f2d76f4000a7f9873c50066461b5` |
+| Padded PIE `UEFI` candidate | `out/fame/u-boot-appsbl-pie/UEFI-u-boot-fame-appsbl-pie.bin` | `2560000` | `21444cb4ff78c8dcf5e138fcc5a8e361fe6d9e1fb08cf39a2af5bfa24aa18333` |
 
 Volatile PIE test sequence from raw U-Boot fastboot:
 
@@ -834,6 +834,8 @@ fastboot -s <fame-serial> oem 'run:go 0x82000000'
 ```
 
 This test does not write flash. If using an Android boot-image wrapper instead, escape semicolons when setting `fastboot_bootcmd` or U-Boot will execute the `bootm loados`/`go` commands immediately during `setenv`.
+
+The staged PIE build that added I-cache-only startup and `qcom,pshold` sysreset support re-enumerated as U-Boot fastboot, bound `qcom_pshold` at `restart@800820`, and rebooted back to persistent U-Boot fastboot when `reset` was run through `fastboot oem 'run:reset'`.
 
 Live result reported by the user: flashing the short MBN artifact to `UEFI` was accepted by SBL3, and raw APPSBL U-Boot got far enough to bring up USB and fastboot. UART became garbage at U-Boot `serial_init()`, so if USB fastboot had failed this image would not have had the earlier UART `mw.l` recovery path. The same issue reproduced through the LK-safe trampoline. Root cause was a UARTDM v1.3 clock/CSR mismatch: U-Boot programmed GSBI5 UART to 7.3728 MHz while the v1.3 driver uses fixed CSR `0xff`, matching LK's 1.8432 MHz UART clock. The current build programs GSBI5 UART to 1.8432 MHz from PLL8 and keeps USB/UDC clock programming unchanged.
 
