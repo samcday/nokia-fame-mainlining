@@ -652,19 +652,19 @@ Build helper:
 
 The helper builds the Linux Fame DTB, builds U-Boot `nokia_fame_lk_fastboot_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, verifies `CONFIG_TEXT_BASE == 0x80208000`, and wraps `u-boot-dtb.bin` in an Android boot image header v0.
 
-Prepared artifacts from the fastboot-flash-capable rebuild:
+Prepared artifacts from the fastboot-flash/fetch-capable rebuild:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
 | Fame DTB with USB and SDCC1 nodes | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `4124` | `83b031a23617296a08a2f07fe389a3dc8fcce55a6b6561021986f86c8902d482` |
-| LK-chain U-Boot payload with `bootm`/`abootimg`/MMC/fastboot flash | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `334636` | `954ef386d8de4528f217e8add25fed8edcea63e8c2b982367417b48fa6c7d6c6` |
-| Android boot image with `bootm`/`abootimg`/MMC/fastboot flash | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `339968` | `c0af12e1324aff449954e28547d858a4181fcd7a282d2e28f0cfe8e1b0c9d92c` |
+| LK-chain U-Boot payload with `bootm`/`abootimg`/MMC/fastboot flash/fetch | `out/fame/u-boot-fame-lk-fastboot/u-boot-dtb.bin` | `336940` | `bc4b243c7f50ef64cc2833308f1fe1e8d598265d0b2d59a5ddf7c67e0fa029be` |
+| Android boot image with `bootm`/`abootimg`/MMC/fastboot flash/fetch | `out/fame/u-boot-lk-fastboot/u-boot-fame-lk-fastboot.img` | `344064` | `0ac422aa3e7cef8b98e78f24357d4084afacd5d74acc7c112fc00b577a68706d` |
 
 `unpack_bootimg` verification:
 
 ```text
 boot magic: ANDROID!
-kernel_size: 334636
+kernel_size: 336940
 kernel load address: 0x80208000
 ramdisk size: 0
 kernel tags load address: 0x80200100
@@ -695,6 +695,8 @@ CONFIG_FASTBOOT_FLASH_BLOCK=y
 CONFIG_FASTBOOT_FLASH_BLOCK_INTERFACE_NAME="mmc"
 CONFIG_FASTBOOT_FLASH_BLOCK_DEVICE_ID=0
 CONFIG_FASTBOOT_GPT_NAME="gpt"
+CONFIG_FASTBOOT_FETCH=y
+CONFIG_FASTBOOT_CMD_LOGICAL_PARTITIONS=y
 CONFIG_ARM_PL180_MMCI=y
 CONFIG_MMC_WRITE=y
 # CONFIG_MMC_HW_PARTITIONING is not set
@@ -757,7 +759,21 @@ ab4f3dbe690 fastboot: block: Add device selection syntax
 1999914a59b qcom_defconfig: Switch Qualcomm fastboot flash from MMC to block
 ```
 
-Fame's LK-chain config now enables the block backend for `mmc` device `0`, so partition names target the default eMMC and the lore device-selection syntax can select an explicit block device. `fastboot flash gpt <image>` support is compiled in through the GPT helper path. This was only build-tested and boot-smoke-tested with `fastboot getvar all` plus `mmc info`; no live `fastboot flash`, `fastboot erase`, GPT write, or partitioning command was run.
+Fame's LK-chain config now enables the block backend for `mmc` device `0`, so partition names target the default eMMC and the lore device-selection syntax can select an explicit block device. `fastboot flash gpt <image>` support is compiled in through the GPT helper path. Destructive operations remain untested by procedure: no live `fastboot flash`, `fastboot erase`, GPT write, or partitioning command was run.
+
+The same rebuild adds a USB/block-backed `fastboot fetch` implementation and exposes `max-fetch-size` as `0x04000000`. Live read-only checks from the updated U-Boot image succeeded:
+
+```text
+version-bootloader: U-Boot 2026.07-rc2-00031-g006a74459e58-dirty
+max-fetch-size: 0x04000000
+partition-size:MainOS: 0x000000008d4a0000
+is-logical:MainOS: no
+partition-size:UEFI: 0x0000000000271000
+Fetching UEFI (offset=0, size=271000)              OKAY
+f2778f084de34b5802a68c498249ec9e5f18fa5635ddf8eb249bd8e89e58da69  /tmp/fame-UEFI.fetch-test.bin
+```
+
+The temporary UEFI fetch dump was removed after verifying the hash against the known-good Android4Lumia LK artifact. Android logical partition management commands are now recognized but fail explicitly with `logical partitions not supported`; Fame's `MainOS` is a GPT partition, not an Android dynamic logical partition.
 
 The `oem run` command takes the U-Boot command after a colon:
 
