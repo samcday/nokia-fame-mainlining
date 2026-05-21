@@ -792,6 +792,36 @@ fastboot boot /var/home/sam/src/nokia-fame-mainlining/out/fame/u-boot-lk-fastboo
 
 This is not a write. Expected behavior is U-Boot UART output, a one-second autoboot window, then `fastboot usb 0`. If the ChipIdea/ULPI path fails cleanly, U-Boot should return to its UART prompt; if it hangs, reset back into the persistent LK APPSBL and continue from LK fastboot.
 
+## Raw APPSBL Fastboot Candidate
+
+Prepared artifacts from the APPSBL fastboot build:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| Raw APPSBL U-Boot fastboot payload with external DTB | `out/fame/u-boot-fame-appsbl-fastboot/u-boot-dtb.bin` | `347180` | `589e2b4fa4e19b2493ee075dc36f0e2fef47ed439eeb97d2ec6e92fb96b92906` |
+| Qualcomm appsbl-style MBN | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot.mbn` | `347224` | `87f330eaa1d598d21736262a840989704163de756127836bac13a6fffdc790ab` |
+| Padded `UEFI` candidate | `out/fame/u-boot-appsbl-fastboot/UEFI-u-boot-fame-appsbl-fastboot.bin` | `2560000` | `5600759933668de4cfc76aa3080e8e9b568575f32a5bbea4f706dd8912e784bc` |
+| LK-safe trampoline kernel | `out/fame/u-boot-appsbl-fastboot/lk-trampoline-build/u-boot-fame-appsbl-fastboot-lk-trampoline-kernel.bin` | `351276` | `c239af09962ede001c7ed4b4592549ebe7ec5620a36ce3dc86b53850df34ed64` |
+| LK-safe trampoline boot image | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot-lk-trampoline.img` | `356352` | `58d75b0559dd25cb7318f0f375ffe97ce0569acafdb1b97e78c884f35841912a` |
+
+The raw APPSBL defconfig is `nokia_fame_appsbl_defconfig`. It links U-Boot at `0x88f00000`, auto-runs `fastboot usb 0`, enables the block-backed eMMC fastboot backend, and includes a minimal MSM8960 GCC provider for SDC1, USB HS1, and GSBI5 UART clocks. The existing LK-chain `fastboot_bootcmd` helper is gated to `CONFIG_NOKIA_FAME_LK_FASTBOOT_CHAIN` so it is not baked into this APPSBL target.
+
+The first direct LK-chain sanity wrapper packaged the same APPSBL-linked `u-boot-dtb.bin` as an Android boot image with kernel load address `0x88f00000`; LK rejected it with `kernel/ramdisk addresses overlap with aboot addresses` because Android4Lumia LK's aboot window is `0x88f00000..0x89000000`.
+
+The replacement LK-chain trampoline wrapper loads a 72-byte stub at `0x80208000`, keeps the appended U-Boot payload at `0x80209000`, then copies that payload to `0x88f00000` and jumps there after LK has exited. Test command from the working LK fastboot prompt:
+
+```sh
+fastboot boot /var/home/sam/src/nokia-fame-mainlining/out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot-lk-trampoline.img
+```
+
+This wrapper is not a persistent write; it is intended as a safer one-shot sanity check for APPSBL-linked U-Boot. Persistent testing should keep `BACKUP_UEFI` pristine as the local stock rescue anchor.
+
+Live result reported by the user: flashing the short MBN artifact to `UEFI` was accepted by SBL3, and raw APPSBL U-Boot got far enough to bring up USB and fastboot. UART became garbage at U-Boot `serial_init()`, so if USB fastboot had failed this image would not have had the earlier UART `mw.l` recovery path. The same issue reproduced through the LK-safe trampoline. Root cause was a UARTDM v1.3 clock/CSR mismatch: U-Boot programmed GSBI5 UART to 7.3728 MHz while the v1.3 driver uses fixed CSR `0xff`, matching LK's 1.8432 MHz UART clock. The current build programs GSBI5 UART to 1.8432 MHz from PLL8 and keeps USB/UDC clock programming unchanged.
+
+The current build also fixes raw APPSBL fastboot serial number reporting. If previous-stage bootargs do not provide `androidboot.serialno`, Fame initializes eMMC nonfatally during late board init, derives `serial#` from the 32-bit eMMC CID product serial number, and formats it as lowercase hex to match Android4Lumia LK's `target_serialno()` behavior. This lets host-side `fastboot -s <serial>` scoping work consistently across LK and U-Boot without recording IMEI or other personal identifiers in git.
+
+After that test, the known-good Android4Lumia LK image was restored to `UEFI` from FlashApp with `lp-externals flash raw-write-partition --confirm-raw-write UEFI out/fame/android4lumia-lk-build/UEFI-android4lumia-lk-msm8960.bin`; the image size was `2560000` bytes and SHA-256 was `f2778f084de34b5802a68c498249ec9e5f18fa5635ddf8eb249bd8e89e58da69`.
+
 ## Raw U-Boot APPSBL Result And UART Stage0 Rescue
 
 Live result reported by the user: the aligned U-Boot APPSBL image was accepted by SBL3. The SBL log included `APPSBL Image Loaded`, then U-Boot reached the relocated main loop and prompt over GSBI5 UART. This confirms the raw U-Boot APPSBL path is viable when the MBN destination is `0x88f00000` and the payload size/signature pointers are aligned.

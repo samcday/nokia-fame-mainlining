@@ -42,6 +42,7 @@ Environment overrides:
   BOOT_TAGS_OFFSET      ATAGS/DT offset from base (default: 0x00000100)
   BOOT_PAGESIZE         Android boot image page size (default: 4096)
   BOOT_CMDLINE          Header cmdline (default: empty)
+  BOOT_IMAGE_NAME       Output boot image filename (default: u-boot-fame-lk-fastboot.img)
   SKIP_LINUX=1          Reuse existing Linux DTB
   SKIP_UBOOT=1          Reuse existing U-Boot build artifact
 EOF
@@ -76,13 +77,14 @@ BOOT_RAMDISK_OFFSET=${BOOT_RAMDISK_OFFSET:-0x02000000}
 BOOT_TAGS_OFFSET=${BOOT_TAGS_OFFSET:-0x00000100}
 BOOT_PAGESIZE=${BOOT_PAGESIZE:-4096}
 BOOT_CMDLINE=${BOOT_CMDLINE:-}
+BOOT_IMAGE_NAME=${BOOT_IMAGE_NAME:-u-boot-fame-lk-fastboot.img}
 SKIP_LINUX=${SKIP_LINUX:-0}
 SKIP_UBOOT=${SKIP_UBOOT:-0}
 
 BOOT_KERNEL_ADDR=$(printf '0x%08x' $((BOOT_BASE + BOOT_KERNEL_OFFSET)))
 DTB_PATH="$LINUX_BUILD_DIR/arch/arm/boot/dts/qcom/$DTB"
 U_BOOT_BIN="$U_BOOT_BUILD_DIR/u-boot-dtb.bin"
-IMAGE="$OUT_DIR/u-boot-fame-lk-fastboot.img"
+IMAGE="$OUT_DIR/$BOOT_IMAGE_NAME"
 
 [[ -d "$LINUX_DIR" ]] || die "kernel tree not found: $LINUX_DIR"
 [[ -f "$LINUX_DIR/Makefile" ]] || die "kernel Makefile not found in: $LINUX_DIR"

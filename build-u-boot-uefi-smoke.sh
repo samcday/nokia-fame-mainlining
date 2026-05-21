@@ -39,6 +39,8 @@ Environment overrides:
   TEXT_BASE             MBN load address, must match U-Boot TEXT_BASE (default: 0x88F00000)
   MBN_PAYLOAD_ALIGN     Pad payload bytes before MBN sizing (default: 8)
   UEFI_PARTITION_SIZE   Padded output size in bytes (default: 2560000)
+  ARTIFACT_NAME         MBN basename without extension (default: u-boot-fame-uart-smoke)
+  UEFI_IMAGE_NAME       Padded output filename (default: UEFI-u-boot-fame-uart-smoke.bin)
   SKIP_LINUX=1          Reuse existing Linux DTB
   SKIP_UBOOT=1          Reuse existing U-Boot build artifact
 
@@ -73,13 +75,15 @@ JOBS=${JOBS:-$(nproc)}
 TEXT_BASE=${TEXT_BASE:-0x88F00000}
 MBN_PAYLOAD_ALIGN=${MBN_PAYLOAD_ALIGN:-8}
 UEFI_PARTITION_SIZE=${UEFI_PARTITION_SIZE:-2560000}
+ARTIFACT_NAME=${ARTIFACT_NAME:-u-boot-fame-uart-smoke}
+UEFI_IMAGE_NAME=${UEFI_IMAGE_NAME:-UEFI-u-boot-fame-uart-smoke.bin}
 SKIP_LINUX=${SKIP_LINUX:-0}
 SKIP_UBOOT=${SKIP_UBOOT:-0}
 
 DTB_PATH="$LINUX_BUILD_DIR/arch/arm/boot/dts/qcom/$DTB"
 U_BOOT_BIN="$U_BOOT_BUILD_DIR/u-boot-dtb.bin"
-MBN="$OUT_DIR/u-boot-fame-uart-smoke.mbn"
-IMAGE="$OUT_DIR/UEFI-u-boot-fame-uart-smoke.bin"
+MBN="$OUT_DIR/$ARTIFACT_NAME.mbn"
+IMAGE="$OUT_DIR/$UEFI_IMAGE_NAME"
 
 [[ -d "$LINUX_DIR" ]] || die "kernel tree not found: $LINUX_DIR"
 [[ -f "$LINUX_DIR/Makefile" ]] || die "kernel Makefile not found in: $LINUX_DIR"
