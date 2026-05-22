@@ -267,3 +267,54 @@ non-fatal log warts are the USB PHY/RPM regulator supplier device-link warning,
 `l3: voltage operation not allowed` while binding the gadget, live GPT backup
 header mismatch warnings, early UART garbage during console handoff, and only
 CPU0 coming online.
+
+Retest after adding MSM8227 TLMM, Fame SDCC1/eMMC pinctrl, and dropping the
+overlapping standalone `qcom,pshold` node succeeded. The final rebuilt image was
+booted non-destructively from persistent U-Boot fastboot on 2026-05-22 with:
+
+```sh
+fastboot -s 7cda982 oem 'run:setenv fdt_high 0xffffffff; setenv initrd_high 0xffffffff'
+fastboot -s 7cda982 boot out/fame/fame-linux-fastboot.img
+```
+
+Built artifacts from this run:
+
+| Artifact | Size | SHA-256 |
+| --- | --- | --- |
+| `out/fame/fame-linux-fastboot.img` | `10403840` | `bb02a4f4de68963aebd4df5107b57d0b865c0e04141476f7e3093a4a97e1867c` |
+| `out/fame/Image.gz` | `9466058` | `e4e7cc4bf0efedf35fd8e2df2c4ee6fd51494a51ba5fb78017191ee0dd27a552` |
+| `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `6560` | `f42d89dd578f3b3aadd32b62d3b2a6ac407be249eb2380b936bc81be1764a1d0` |
+| `out/fame/minitrd.cpio.gz` | `919702` | `61079d35122450a946d7535f8cb92c4b5530fd53aef4bead2b4be3a004863b08` |
+
+Relevant UART result:
+
+```text
+Linux version 7.1.0-rc4-00059-g734e9790ac25
+msm_serial 16440000.serial: msm_serial: detected port #0
+qcom_rpm 108000.rpm: RPM firmware 3.0.16842945
+l5: Bringing 0uV into 2950000-2950000uV
+l11: Bringing 0uV into 1800000-1800000uV
+mmci-pl18x 12400000.mmc: DMA channels RX dma0chan1, TX dma0chan2
+mmc0: new high speed MMC card at address 0001
+mmcblk0: mmc0:0001 008G92 7.28 GiB
+mmcblk0boot0: mmc0:0001 008G92 4.00 MiB
+mmcblk0boot1: mmc0:0001 008G92 4.00 MiB
+mmcblk0rpmb: mmc0:0001 008G92 512 KiB, chardev (238:0)
+[minitrd] CDC-ACM gadget bound to ci_hdrc.0
+[minitrd] interactive shell on /dev/ttyMSM0
+```
+
+The intermediate TLMM-only boot showed `msm-restart 800820.restart: error
+-EBUSY` because the standalone `qcom,pshold` node overlapped the TLMM resource.
+After dropping that node, the `msm-restart` failure no longer appeared; TLMM's
+`ps_hold` restart hook owns the register instead. Issuing `reboot -f` through
+the initrd CDC-ACM shell returned the phone to persistent U-Boot fastboot as
+`7cda982 Android Fastboot`. Host-side Fame CDC-ACM enumeration is now also
+confirmed through the stable by-id symlink
+`usb-Nokia_Lumia_520_CDC_ACM_fame-if00`.
+
+Targeted `dtbs_check` remains blocked by the host toolchain:
+
+```text
+ERROR: dtschema minimum version is v2023.9
+```
