@@ -1,0 +1,10 @@
+mkosi.builddir/*
+mkosi.cache/*
+mkosi.output/*
+mkosi.pkgcache/*
+mkosi.sandbox/*
+!mkosi.builddir/.gitkeep
+!mkosi.cache/.gitkeep
+!mkosi.output/.gitkeep
+!mkosi.pkgcache/.gitkeep
+!mkosi.sandbox/.gitkeep

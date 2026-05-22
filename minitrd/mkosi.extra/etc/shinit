@@ -1,0 +1,2 @@
+# BusyBox ash reads this for interactive shells when /init exports ENV.
+alias bye='echo b > /proc/sysrq-trigger'
