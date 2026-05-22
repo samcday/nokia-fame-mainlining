@@ -11,3 +11,4 @@ extracted/firmware/*
 extracted/acpi-or-platform-config/*
 !extracted/README.md
 !extracted/**/.gitkeep
+*.log
