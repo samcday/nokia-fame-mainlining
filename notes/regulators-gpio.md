@@ -63,3 +63,16 @@ Express-derived RPM/regulator driver patch.
 The old Fame DTS sketch used `drive-strengh` instead of `drive-strength` in
 SDCC pinctrl groups. The minimal first-boot DTS does not carry those pinctrl
 groups; fix the typo before reintroducing SDCC pinctrl.
+
+## SDCC1 Pinctrl Breadcrumbs
+
+Fame's internal eMMC already enumerates in Linux using the current SDCC1 node
+and PM8038 L5/L11 supplies. The next cleanup is to stop relying on bootloader
+pinmux state by adding the shared MSM8960-style TLMM node and board SDCC1
+default/sleep states.
+
+| Fact | Source | Trust |
+| --- | --- | --- |
+| Stock ACPI exposes TLMM as `GIO0` / `QCOM0500`; Samsung Express MSM8930 models the shared TLMM block as `qcom,msm8960-pinctrl` at `0x00800000`, size `0x4000`, 152 GPIOs, and GIC SPI 16. | `dsdt.dsl:17194-17219`, `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:443-452` | A/E |
+| Mainline's MSM8960 TLMM binding and driver expose SDCC1 groups `sdc1_clk`, `sdc1_cmd`, and `sdc1_data` under `qcom,msm8960-pinctrl`. | `linux/Documentation/devicetree/bindings/pinctrl/qcom,msm8960-pinctrl.yaml:16-31,51-60`, `linux/drivers/pinctrl/qcom/pinctrl-msm8960.c:329-334,1212-1214,1238-1240` | E |
+| Samsung Express SDCC1 default pinctrl uses clock drive strength 16 with bias disabled, command/data drive strength 10 with pull-ups, and sleep drive strength 2 for all SDCC1 groups. | `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930-samsung-expressltexx.dts:298-304,382-420` | E |
