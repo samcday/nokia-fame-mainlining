@@ -41,9 +41,13 @@ Use this order when facts conflict:
 | D | Mainline4Lumia/WOA adjacent Lumia work | Method/reference source. |
 | E | MSM8227/MSM8930 sibling devices | Style and generic SoC reference only. |
 
+The local `samsung-expressltexx` kernel branch is a high-value MSM8930 sibling reference for shared SoC DT infrastructure and related driver enablement. Treat it as more trustworthy than Android4Lumia/community guesses for common MSM8930/MSM8227 infrastructure, but still below stock FFU-derived facts and live read-only device observations. It is acceptable for Fame and Express to temporarily duplicate common MSM8930/MSM8227 DT infrastructure; defer deduplication until both devices have stable bring-up.
+
 ## Kernel Notes
 
 `linux/` work must target upstreamable Linux kernel patches from current mainline. Use `msm8227-mainline` and community trees only as references, not as the source of truth or a base to polish.
+
+The active `linux/` and `u-boot/` branches are bring-up integration branches, not submission branches. Keep them recoverable by committing early and regularly rather than accumulating large uncommitted experiments. Use kernel-style subjects and commit messages for changes that appear upstreamable. Prefix uncertain exploratory commits with `WIP:`. Prefix intentionally dirty instrumentation, debug hacks, or throwaway experiments with `HACK:`. Do not bury debug logging or speculative hardware guesses in clean-looking commits; either document the evidence in `notes/*.md` and make it a real patch, or mark the commit honestly as WIP/HACK.
 
 Before any work inside `linux/`, AI coding assistants must read `linux/README` and follow the referenced `linux/Documentation/process/coding-assistants.rst`. In particular, do not add `Signed-off-by` tags to kernel commits or patches; only the human submitter may certify DCO signoff. Follow the normal kernel development process, coding style, submitting-patches guidance, and devicetree binding requirements.
 
