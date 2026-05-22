@@ -110,8 +110,18 @@ Initial Linux simple-framebuffer assumptions:
 | Stride | `1920` | B, inferred from 480 pixels at 32 bpp |
 | Format | `a8r8g8b8` | B, inferred from Qualcomm/UEFI GOP BGRA convention and adjacent Lumia SimpleFbDxe |
 
+The raw U-Boot fastboot Linux path intentionally does not enable this as a
+`simple-framebuffer` node yet. A 2026-05-22 hardware boot attempt with an
+Android boot-image v2 DTB reached U-Boot's FDT handoff, then failed while
+allocating the kernel at `0x80208000` because the DTB-reserved framebuffer at
+`0x80400000..0x807fffff` overlaps the ARM zImage low load/decompression window.
+The relevant U-Boot fixed-address LMB allocation is `u-boot/boot/bootm.c:706-716`.
+Keep the framebuffer facts above for later UEFI/simpledrm experiments, but do
+not reserve that memory in `qcom-msm8227-nokia-fame.dts` for the first UART/UDC
+bring-up path.
+
 ## Next Work
 
-1. Determine whether the unlocked UEFI path leaves a usable framebuffer and whether Linux can consume it as `simple-framebuffer`.
+1. Re-test simple framebuffer only from a boot path that proves the display buffer is live and does not overlap the ARM kernel load/decompression window.
 2. Decode panel supply, reset, and backlight resources from ACPI or another tier-A source before enabling MDP/DSI.
 3. Translate PCFG timings and DSI values into a Linux panel description only after reset/backlight/power sequencing is credible.

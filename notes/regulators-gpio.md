@@ -6,12 +6,12 @@ Initial regulator/GPIO data comes from the msm8227-mainline Fame DTS and is not 
 
 | Consumer | Supply Mapping | Source | Trust |
 | --- | --- | --- | --- |
-| eMMC SDCC1 `vmmc` | `pm8038_l5` | Fame DTS | C |
-| eMMC SDCC1 `vqmmc` | `pm8038_l11` | Fame DTS | C |
+| eMMC SDCC1 `vmmc` | `pm8038_l5` | Fame DTS sketch; PM8038 L5 RPM resource support cross-checked below | C |
+| eMMC SDCC1 `vqmmc` | `pm8038_l11` | Fame DTS sketch; PM8038 L11 RPM resource support cross-checked below | C |
 | SDCC3 `vmmc` | `pm8038_l6` | Fame DTS | C |
 | SDCC3 `vqmmc` | `pm8038_l22` | Fame DTS | C |
-| USB HS PHY 3.3 V | `pm8038_l3` | Fame DTS | C |
-| USB HS PHY 1.8 V | `pm8038_l4` | Fame DTS | C |
+| USB HS PHY 3.3 V | `pm8038_l3` | Fame DTS sketch; PM8038 L3 RPM resource support cross-checked below | C |
+| USB HS PHY 1.8 V | `pm8038_l4` | Fame DTS sketch; PM8038 L4 RPM resource support cross-checked below | C |
 | WCNSS core | `pm8038_s1` | Fame DTS | C |
 | WCNSS mx | `pm8038_l24` | Fame DTS | C |
 | WCNSS px/io | `pm8038_l11` | Fame DTS | C |
@@ -43,6 +43,23 @@ Initial regulator/GPIO data comes from the msm8227-mainline Fame DTS and is not 
 
 Do not overwrite DTS GPIO flags directly from raw `_CRS` bytes. Decode and verify ACPI flags, pulls, trigger type, polarity, and wake behavior first.
 
+## MSM8930/PM8038 RPM Breadcrumbs
+
+| Fact | Source | Trust |
+| --- | --- | --- |
+| MSM8930 RPM resource table includes PM8038 L3/L4/L5/L11 with active resource IDs 106/108/110/122, selectors 38/39/40/46, and status selectors 47/49/51/63. | `community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/devices-8930.c:135-143`, `community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/include/mach/rpm-8930.h:72-80,238-255,455-472` | C |
+| The Samsung Express MSM8930 branch ports those same PM8038 resources into mainline-style RPM/regulator drivers and supports PM8038 `s4`, `l3`, `l4`, `l5`, and `l11`. | `samsung-expressltexx:drivers/mfd/qcom_rpm.c:341-347`, `samsung-expressltexx:drivers/regulator/qcom_rpm-regulator.c:918-924,950-958` | E |
+| The Samsung Express board wires USB HS PHY supplies to PM8917 L4/L3 and supplies its board-specific ULPI init sequence from the board DTS. Fame keeps its ACPI-derived ULPI init sequence instead of copying Express values. | `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930-samsung-expressltexx.dts:519-528`, `notes/hardware-inventory.md:35-36` | E/A |
+
+Do not enable SDCC3 supplies from the old Fame DTS sketch yet. PM8038 L6/L22 are not covered by the current Express-derived RPM regulator support and SDCC3 card-detect GPIO flags remain undecoded from ACPI.
+
+The current Fame DTS only instantiates PM8038 RPM regulators needed for first
+boot cleanup: L3/L4 for USB HS PHY and L5/L11 for SDCC1/eMMC. These are
+deliberately limited to the PM8038 resources now supported by the local
+Express-derived RPM/regulator driver patch.
+
 ## Known DTS Issues
 
-`qcom-msm8227-nokia-fame.dts` currently uses `drive-strengh` instead of `drive-strength` in SDCC pinctrl groups. Fix this before treating SDCC pinctrl as configured.
+The old Fame DTS sketch used `drive-strengh` instead of `drive-strength` in
+SDCC pinctrl groups. The minimal first-boot DTS does not carry those pinctrl
+groups; fix the typo before reintroducing SDCC pinctrl.

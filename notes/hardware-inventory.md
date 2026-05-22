@@ -35,6 +35,9 @@ From `RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu` a
 | USB function | ACPI `UFN1` uses HID `QCOM01C0`, base `0x12500000`, and `PHYC` config method | `dsdt.dsl:18376-18440` | A |
 | USB PHY init | ACPI `UFN1.PHYC` returns vendor ULPI register writes `(0x81, 0x38)` and `(0x82, 0x14)`; for Linux-style `qcom,init-seq` this is represented as offsets `<0x01 0x38 0x02 0x14>` from ULPI vendor base `0x80` | `dsdt.dsl:18422-18438`, `linux/drivers/phy/qualcomm/phy-qcom-usb-hs.c:144-146` | A |
 | USB controller shape | Android4Lumia LK for its MSM8960/MSM8227 target defines `MSM_USB_BASE` as `0x12500000`, `INT_USB_HS` as `GIC_SPI_START + 100`, and USB HS1 clock/reset registers matching the mainline MSM8960 GCC binding; mainline MSM8960 DTS uses the same `qcom,ci-hdrc` two-window register shape, GIC SPI 100, USB HS1 clocks/reset, and nested ULPI `qcom,usb-hs-phy-msm8960` PHY. LK's USB HS1 XCVR table programs 60 MHz from PLL8 with legacy NS/MD registers, branch enable bit 9, reset bit 0, and root enable bit 11. | `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/iomap.h:72`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/irqs.h:44-53`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/clock.h:97-100`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/clock.c:267-300`, `linux/arch/arm/boot/dts/qcom/qcom-msm8960.dtsi:505-534` | C/E |
+| MSM8930-style RPM | The Samsung Express MSM8930 sibling models RPM at `0x00108000` with `qcom,rpm-msm8930`, IPC via KPSS GCC/L2, and ack/err/wakeup interrupts 19/21/22. The matching Express driver branch adds the MSM8930 RPM resource table and match entry. | `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:123-132`, `samsung-expressltexx:drivers/mfd/qcom_rpm.c:341-371,469-475` | E |
+| PM8038 RPM resources | Android4Lumia's MSM8930 RPM map and the Samsung Express branch agree on PM8038 L3/L4/L5/L11 active resource IDs/selectors/status IDs. The Express branch only models PM8038 `s4`, `l3`, `l4`, `l5`, and `l11` so current Fame supply wiring should stay within that supported set. | `community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/devices-8930.c:135-143`, `community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/include/mach/rpm-8930.h:72-80,238-255,455-472`, `samsung-expressltexx:drivers/mfd/qcom_rpm.c:341-347`, `samsung-expressltexx:drivers/regulator/qcom_rpm-regulator.c:918-924,950-958` | C/E |
+| TSENS/QFPROM shape | The Samsung Express MSM8930 sibling places QFPROM at `0x00700000`, TSENS calibration cells at offsets `0x404` and `0x414`, a GCC child `qcom,msm8930-tsens` using those cells and interrupt 178, and a CPU thermal zone reading sensor 9. The Express branch adds MSM8930 TSENS data, slopes, init, and binding entries. | `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:45-65,140-153,211-233`, `samsung-expressltexx:drivers/thermal/qcom/tsens-8960.c:36-65,190-260,329-361`, `samsung-expressltexx:drivers/thermal/qcom/tsens.c:1134-1140` | E |
 | Debug UART | Device UART output is now available after hardware rework. Host-to-device TX is suspected broken after reassembly, but device-to-host RX is enough for kernel/U-Boot logs. | Live hardware observation, 2026-05-20 | B |
 | Debug UART mapping | Android4Lumia LK maps MSM8227/MSM8627 boards to `LINUX_MACHTYPE_8627_*`, then initializes GSBI5 UARTDM with GSBI base `0x16400000` and UART base `0x16440000`; the Samsung MSM8930 sibling DTS uses the same GSBI5/UARTDM addresses, `qcom,msm-uartdm-v1.3` compatible, GIC SPI 154 interrupt, and GSBI5 GCC clocks. LK's `clock_config_uart_dm()` programs GSBI5 UART to 1.8432 MHz from PLL8 and uses UARTDM CSR `0xff` for 115200 baud. | `community/android4lumia-lk-msm8227:target/msm8960/init.c:331-334,398-408`, `/var/home/sam/src/samsung-expressltexx/linux/arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:354-377`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/acpuclock.c:116-126`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/clock.c:150-203`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/clock.h:33,55-60`, `out/fame/android4lumia-lk-msm8227-src/platform/msm_shared/uart_dm.c:405-412` | C/E |
 | MSM8960 PLL8 vote | LK models PLL8 as a 384 MHz vote clock with enable vote register `0x34c0` bit 8 and status register `0x3158` bit 16; U-Boot's minimal MSM8960 GCC support uses that PLL8 vote before programming SDC1, USB HS1, and GSBI5 UART legacy NS/MD clocks. | `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/clock.c:116-127`, `out/fame/android4lumia-lk-msm8227-src/platform/msm8960/include/platform/clock.h:64-73` | C/E |
@@ -69,16 +72,16 @@ From `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts`:
 
 | Area | Current DTS State | Trust |
 | --- | --- | --- |
-| Model/compatible | `Nokia Lumia 520`, `nokia,fame`, `qcom,msm8930`, `qcom,msm8227` | C |
+| Model/compatible | `Nokia Lumia 520`, `nokia,fame`, `qcom,msm8227` | C |
 | Memory | `0x80200000 0x08c00000`, `0x90000000 0x10000000` | C |
-| Console | GSBI5 UART as `serial0` | C, untestable until UART exists |
-| PMIC | Includes `pm8038.dtsi` | C |
-| Keys | PM8038 GPIO 3/8/10/11 for volume/camera keys | C |
-| eMMC | SDCC1 with PM8038 L5/L11 supplies | C |
-| External SD | SDCC3 with PM8038 L6/L22 supplies, currently `non-removable` | C, suspicious |
-| USB | `usb1` enabled as `peripheral`, HS PHY uses ACPI-derived ULPI init sequence; regulator supplies still not modeled | A/C, supply sequencing pending |
-| WCNSS/Riva | WLAN pins GPIO84-88, BT pins GPIO28/29/83, WCN3660-style iris | C |
-| Touch | Disabled Synaptics RMI4 sketch at I2C `0x4b`, IRQ GPIO11, reset GPIO52 | C, disabled |
+| Console | GSBI5 UART as `serial0` | C/E, live-tested through Linux UART |
+| PMIC | No SSBI PM8038 node yet; only RPM-managed PM8038 regulator subnodes are modeled for first boot | C/E, pending live Linux retest |
+| Keys | Not currently modeled in the minimal first-boot DTS | C |
+| eMMC | SDCC1 with PM8038 L5/L11 supplies | C/E, live-tested through Linux boot |
+| External SD | Not currently modeled; old DTS sketch claimed PM8038 L6/L22 supplies and had suspicious `non-removable` state | C, intentionally deferred |
+| USB | `usb1` enabled as `peripheral`; HS PHY uses ACPI-derived ULPI init sequence and PM8038 L4/L3 supplies | A/C/E, initrd-side UDC/gadget live-tested |
+| WCNSS/Riva | Not currently modeled in the minimal first-boot DTS; old DTS sketch had WLAN pins GPIO84-88, BT pins GPIO28/29/83, WCN3660-style iris | C |
+| Touch | Not currently modeled in the minimal first-boot DTS; old DTS sketch had a disabled Synaptics RMI4 node at I2C `0x4b`, IRQ GPIO11, reset GPIO52 | C |
 
 The stock DSDT `TCH1` resource buffer independently points at `I2C3`, decodes to I2C address `0x4B`, and references `GIO0` pins 11 and 52. This corroborates the disabled DTS sketch's bus/address/GPIO shape but does not by itself identify the controller as Synaptics or validate regulator rails.
 

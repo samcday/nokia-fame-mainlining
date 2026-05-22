@@ -49,6 +49,15 @@ Before any work inside `linux/`, AI coding assistants must read `linux/README` a
 
 Before changing a GPIO, regulator, memory range, partition offset, boot image layout value, panel command, or other non-obvious hardware fact, add or update a breadcrumb in `notes/*.md` with exact source paths and line ranges.
 
+For normal kernel bring-up builds, prefer the local helpers instead of open-coding kernel `make` commands:
+
+| Helper | Purpose |
+| --- | --- |
+| `./build-linux-fastboot.sh` | Builds `linux/`, builds the mini-initrd, packages `Image.gz` plus Android boot-image v2 DTB payload, and writes `out/fame/fame-linux-fastboot.img` for persistent U-Boot `fastboot boot`. |
+| `./build-minitrd.sh` | Builds the mkosi/APK BusyBox mini-initrd with UART and CDC-ACM gadget shell setup. |
+
+The persistent U-Boot fastboot path is the default non-flashing kernel test path. Safe U-Boot-side read/test commands include `fastboot getvar`, `fastboot boot`, `fastboot fetch`, and targeted `fastboot oem run` diagnostics. Treat `fastboot flash`, `fastboot erase`, GPT writes, ESP writes, and firmware partition writes as destructive unless the user explicitly requests that exact operation in the current turn.
+
 Known DTS cleanup candidates from the bootstrap pass:
 
 | Issue | Path |
@@ -62,6 +71,4 @@ Known DTS cleanup candidates from the bootstrap pass:
 
 Do not assume U-Boot can simply be dropped into the ESP as an ARM UEFI application. In current U-Boot, `CONFIG_EFI_APP` is gated to x86 even though some ARM EFI object files exist.
 
-The Samsung Express workspace has reusable ARM32 Snapdragon experiments: `ARCH_SNAPDRAGON_ARM32`, MSM8960-style timer setup, UARTDM v1.3/GSBI serial support, and a minimal ARM32 defconfig pattern. These are not yet integrated here.
-
-Because there is no UART path, a fastboot-only U-Boot chainloader is risky until USB gadget/PHY clocks are proven. Prefer visible/observable payload experiments and kernel UDC bring-up before relying on U-Boot fastboot.
+Current live path: raw APPSBL U-Boot is flashed to `UEFI`, comes up over UART, and falls back to USB fastboot when autoboot fails. This is now good enough for kernel `fastboot boot` iterations, but keep a clear recovery path before any persistent bootloader or partition write.

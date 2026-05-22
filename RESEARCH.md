@@ -14,6 +14,7 @@ When adding or changing a non-obvious register address, GPIO, regulator, partiti
 | FFU download/extraction inventory | `notes/ffu-inventory.md` |
 | GPT and partition facts | `notes/partitions.md` |
 | Boot chain, ESP, UEFI, U-Boot route | `notes/boot-chain.md` |
+| Linux fastboot boot image, USB gadget, mini-initrd | `notes/usb-and-initramfs.md` |
 | Lumia BootMgr/FlashApp/PhoneInfo protocol | `notes/bootmgr-protocol.md` |
 | ACPI/DSDT/SSDT/platform config | `notes/acpi.md` |
 | Display/panel/simplefb clues | `notes/display.md` |
