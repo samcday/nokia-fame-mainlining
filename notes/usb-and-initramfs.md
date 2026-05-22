@@ -13,7 +13,7 @@ Current test image builder:
 | Kernel payload | Gzip-compressed ARM `Image` at `out/fame/Image.gz` |
 | DTB payload | `qcom-msm8227-nokia-fame.dtb` in the Android boot-image v2 DTB area |
 | Ramdisk | `out/fame/minitrd.cpio.gz` from `./build-minitrd.sh` |
-| U-Boot command | `fastboot boot out/fame/fame-linux-fastboot.img` |
+| U-Boot command | Set `fdt_high=0xffffffff` and `initrd_high=0xffffffff`, open `oem console`, then `fastboot boot out/fame/fame-linux-fastboot.img` |
 
 Boot layout values currently used by `build-linux-fastboot.sh`:
 
@@ -48,11 +48,9 @@ the framebuffer for this first UART/UDC boot path.
 The next hardware test got past kernel load and then failed with `ramdisk -
 allocation error`. U-Boot had already copied the Android boot-image ramdisk to
 the header-requested address `0x88600000`, then `boot_ramdisk_high()` tried to
-allocate a second high ramdisk copy and failed. Rebuilt Fame U-Boot artifacts
-set `initrd_high=0xffffffff` when unset, which selects U-Boot's in-place initrd
-path and reserves the already-copied ramdisk instead of relocating it. For a
-currently running older U-Boot instance, the equivalent live workaround is
-`fastboot oem 'run:setenv initrd_high 0xffffffff'` before `fastboot boot`.
+allocate a second high ramdisk copy and failed. The current live procedure sets
+`initrd_high=0xffffffff` before `fastboot boot`, which selects U-Boot's in-place
+initrd path and reserves the already-copied ramdisk instead of relocating it.
 
 A later hardware test reached `Starting kernel ...` but produced no early kernel
 output. U-Boot had relocated the FDT to `0x80204000`, directly below the ARM
@@ -206,7 +204,8 @@ Built artifacts from the MSM8930 RPM/TSENS follow-up run:
 Non-flashing boot command used on 2026-05-22:
 
 ```sh
-fastboot -s 7cda982 oem 'run:setenv fdt_high 0xffffffff; setenv initrd_high 0xffffffff'
+fastboot -s 7cda982 oem 'run:setenv fdt_high 0xffffffff; setenv initrd_high 0xffffffff; printenv fdt_high initrd_high'
+fastboot -s 7cda982 oem console
 fastboot -s 7cda982 boot out/fame/fame-linux-fastboot.img
 ```
 

@@ -1,18 +1,19 @@
 # Boot Chain
 
-The current unit has been unlocked with `~/src/lp-externals`, but this workspace has not yet validated an ergonomic chainloader path.
+The current unit has been unlocked with `~/src/lp-externals`. The live `UEFI` partition now contains persistent raw APPSBL U-Boot, not Nokia BootMgr, and that U-Boot falls back to USB fastboot when autoboot fails.
 
 ## Current Understanding
 
 | Stage | Status | Notes |
 | --- | --- | --- |
-| Lumia BootMgr USB | Candidate | Exposes `0421:066e` and `NOK*` protocol. |
-| FlashApp/PhoneInfoApp | Candidate | `lp-externals` can switch/read inventory safely. |
+| Lumia BootMgr USB | Historical | Exposes `0421:066e` and `NOK*` protocol when stock BootMgr/UEFI is restored. |
+| FlashApp/PhoneInfoApp | Historical | `lp-externals` can switch/read inventory safely when Nokia BootMgr/FlashApp is present. |
 | EFIESP | Extracted from stock FFU | FAT16 image at stock GPT LBA `131072`, size `67108864`. |
 | ARM UEFI payload | Proven | The unlocked UEFI fallback accepts `IMAGE_FILE_MACHINE_THUMB (0x1C2)` EFI applications from `\efi\boot\bootarm.efi`; `ConOut` and GOP BLT work. |
 | U-Boot as ARM EFI app | Proven to main loop | Local U-Boot ARM32 EFI-app patches produce a Lumia-loadable THUMB PE/COFF image that reaches the U-Boot main loop. |
-| Raw ARM32 U-Boot payload | Proven to prompt | Unsigned short-header APPSBL at `0x88f00000` reaches U-Boot over GSBI5 UART. |
-| LK-chain U-Boot fastboot | Prepared, untested | Android boot image packages U-Boot at LK's `0x80208000` kernel load address and auto-runs `fastboot usb 0`. |
+| Raw ARM32 U-Boot payload | Working | Unsigned short-header APPSBL at `0x88f00000` reaches U-Boot over GSBI5 UART and can initialize USB fastboot/eMMC. |
+| Persistent U-Boot fastboot | Working | Raw APPSBL U-Boot is flashed to `UEFI`; it supports `reboot`, `flash`, `fetch`, `oem run`, `oem console`, and non-flashing `fastboot boot` kernel tests. |
+| Linux fastboot image | Candidate | `./build-linux-fastboot.sh` packages `Image.gz`, Android boot-image v2 DTB payload, and mini-initrd as `out/fame/fame-linux-fastboot.img` for persistent U-Boot `fastboot boot`. |
 
 ## EFIESP Findings
 
@@ -501,7 +502,7 @@ Source/layout breadcrumbs:
 | Stock `UEFI` partition is 5000 sectors / `2560000` bytes | `notes/partitions.md:38`, `notes/partitions.md:68` |
 | Lumia UEFI images use a short Qualcomm partition header and `image_src=0` means image bytes start after the `0x28`-byte header | `prior-art/WPinternals/WPinternals/Models/QualcommPartition.cs:99-131`, `prior-art/WPinternals/WPinternals/Models/UEFI.cs:52-56` |
 | MSM8960-family LK APPSBL memory base is `0x88F00000`, size `0x00100000`; `0x80200000` is the downstream kernel base, not the appsbl base | `prior-art/mainline4lumia-lk2nd/target/msm8960/rules.mk:7-10` |
-| U-Boot UART smoke `TEXT_BASE` / MBN destination is now `0x88F00000` | `u-boot/configs/nokia_fame_defconfig`, `build-u-boot-uefi-smoke.sh` `TEXT_BASE` default |
+| U-Boot UART smoke `TEXT_BASE` / MBN destination is now `0x88F00000` | `u-boot/configs/nokia_fame_defconfig`, `build-u-boot.sh` `TEXT_BASE` default |
 | GSBI5 UARTDM base and interrupt are source-backed before DTS enablement | `notes/hardware-inventory.md` debug UART mapping row |
 
 First live raw-`UEFI` test result, reported by the user after flashing the original `0x80208000` candidate:
@@ -529,10 +530,10 @@ Follow-up recovery observation: after this failed boot the phone enumerated as Q
 Build helper:
 
 ```sh
-./build-u-boot-uefi-smoke.sh
+./build-u-boot.sh DEFCONFIG=nokia_fame_defconfig
 ```
 
-This helper builds `make -C linux ... dtbs`, builds U-Boot `nokia_fame_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, emits a Qualcomm appsbl-style MBN header, and pads the result to exactly the stock `UEFI` partition size. It does not flash the device.
+The current consolidated helper builds `make -C linux ... dtbs`, builds U-Boot with `EXT_DTB=<linux-built Fame DTB>`, emits a Qualcomm appsbl-style MBN header, and also emits a legacy standalone image for volatile `fastboot boot`. It does not boot, flash, or erase the device.
 
 Prepared artifacts from the adjusted APPSBL-addressed build, not written to the device by the assistant:
 
@@ -563,8 +564,8 @@ cert_chain_size=0
 Validation results:
 
 ```sh
-./build-u-boot-uefi-smoke.sh
-bash -n ./build-u-boot-uefi-smoke.sh
+./build-u-boot.sh DEFCONFIG=nokia_fame_defconfig
+bash -n ./build-u-boot.sh
 arm-none-eabi-readelf -h out/fame/u-boot-fame-smoke/u-boot
 make -C linux O=/var/home/sam/src/nokia-fame-mainlining/out/fame/linux-build ARCH=arm CROSS_COMPILE=arm-none-eabi- W=1 qcom/qcom-msm8227-nokia-fame.dtb
 ```
@@ -644,13 +645,7 @@ No local stock UEFI or FFU image was present under this workspace during this co
 
 With LK proven as the persistent recovery APPSBL, the next U-Boot test path is `fastboot boot` from LK instead of writing raw APPSBL images. This keeps the known-good LK in `UEFI` and loads U-Boot as a normal Android boot image kernel payload at the downstream kernel address window.
 
-Build helper:
-
-```sh
-./build-u-boot-lk-fastboot.sh
-```
-
-The helper builds the Linux Fame DTB, builds U-Boot `nokia_fame_lk_fastboot_defconfig` with `EXT_DTB=<linux-built Fame DTB>`, verifies `CONFIG_TEXT_BASE == 0x80208000`, and wraps `u-boot-dtb.bin` in an Android boot image header v0.
+This LK-chain path is historical. It was superseded by persistent APPSBL U-Boot plus the PIE test/update workflow, so the top-level build helper no longer carries a separate LK-chain wrapper path.
 
 Prepared artifacts from the fastboot-flash/fetch-capable rebuild:
 
@@ -794,52 +789,58 @@ This is not a write. Expected behavior is U-Boot UART output, a one-second autob
 
 ## Raw APPSBL Fastboot Candidate
 
-Prepared artifacts from the APPSBL fastboot build:
-
-| Artifact | Path | Size | SHA-256 |
-| --- | --- | --- | --- |
-| Raw APPSBL U-Boot fastboot payload with external DTB | `out/fame/u-boot-fame-appsbl-fastboot/u-boot-dtb.bin` | `343416` | `6fc88113acbcd87667f056664b7211814d231e4148b4ff23c0a29ac158f6db20` |
-| Qualcomm appsbl-style MBN | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot.mbn` | `343456` | `ed7e7b7d213258452c10283a93ddc4b6fa2a7f16d2bf28de5f9b503291e54519` |
-| Padded `UEFI` candidate | `out/fame/u-boot-appsbl-fastboot/UEFI-u-boot-fame-appsbl-fastboot.bin` | `2560000` | `dab76b8c303e82a9a75aa355630a210c3120eb19d3b33c52c2e643eae40284f4` |
-| LK-safe trampoline kernel | `out/fame/u-boot-appsbl-fastboot/lk-trampoline-build/u-boot-fame-appsbl-fastboot-lk-trampoline-kernel.bin` | `347512` | `802f0da79bdccc78e98147041fe4e7d25ecaa9e53bf00f902205c20d8fade5c2` |
-| LK-safe trampoline boot image | `out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot-lk-trampoline.img` | `352256` | `a1d42bef13ef9244b5c68fa92449b8f79ccb1a74401908c473a63c03f077b4bd` |
-
-The raw APPSBL defconfig is `nokia_fame_appsbl_defconfig`. It links U-Boot at `0x88f00000`, auto-runs `fastboot usb 0`, enables the block-backed eMMC fastboot backend, and includes a minimal MSM8960 GCC provider for SDC1, USB HS1, and GSBI5 UART clocks. The existing LK-chain `fastboot_bootcmd` helper is gated to `CONFIG_NOKIA_FAME_LK_FASTBOOT_CHAIN` so it is not baked into this APPSBL target.
-
-The first direct LK-chain sanity wrapper packaged the same APPSBL-linked `u-boot-dtb.bin` as an Android boot image with kernel load address `0x88f00000`; LK rejected it with `kernel/ramdisk addresses overlap with aboot addresses` because Android4Lumia LK's aboot window is `0x88f00000..0x89000000`.
-
-The replacement LK-chain trampoline wrapper loads a 72-byte stub at `0x80208000`, keeps the appended U-Boot payload at `0x80209000`, then copies that payload to `0x88f00000` and jumps there after LK has exited. Test command from the working LK fastboot prompt:
+Current build helper:
 
 ```sh
-fastboot boot /var/home/sam/src/nokia-fame-mainlining/out/fame/u-boot-appsbl-fastboot/u-boot-fame-appsbl-fastboot-lk-trampoline.img
+./build-u-boot.sh
 ```
 
-This wrapper is not a persistent write; it is intended as a safer one-shot sanity check for APPSBL-linked U-Boot. Persistent testing should keep `BACKUP_UEFI` pristine as the local stock rescue anchor.
+By default this builds `nokia_fame_appsbl_pie_defconfig` with the Linux-built Fame DTB supplied through `EXT_DTB`. The same position-independent APPSBL U-Boot payload is packaged as a legacy U-Boot standalone image for volatile `fastboot boot` and as a 512-byte-aligned Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`. The helper does not boot, flash, or erase the device.
 
-The trampoline wrapper remains useful for LK-origin tests, but raw U-Boot-to-U-Boot tests no longer need it. A position-independent APPSBL build can be staged as raw bytes into the existing fastboot download buffer and entered directly with `go 0x82000000`, leaving persistent `UEFI` untouched. Host `fastboot boot` is not equivalent for this test because it wraps the payload in an Android boot-image header; jumping to `0x82000000` then enters the `ANDROID!` magic instead of U-Boot. A live manual staging test of the PIE payload worked successfully.
-
-Prepared PIE test artifacts from `nokia_fame_appsbl_pie_defconfig`:
+Prepared artifacts from the consolidated APPSBL PIE build:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Position-independent APPSBL U-Boot payload with external DTB | `out/fame/u-boot-fame-appsbl-pie/u-boot-dtb.bin` | `343552` | `b93fd2c1df968b45b76d068eabe979ace973039e6687052599985bd0f6b98a4e` |
-| Qualcomm appsbl-style PIE MBN | `out/fame/u-boot-appsbl-pie/u-boot-fame-appsbl-pie.mbn` | `343592` | `6772724c5d44530815693bca8f2ede319825f2d76f4000a7f9873c50066461b5` |
-| Padded PIE `UEFI` candidate | `out/fame/u-boot-appsbl-pie/UEFI-u-boot-fame-appsbl-pie.bin` | `2560000` | `21444cb4ff78c8dcf5e138fcc5a8e361fe6d9e1fb08cf39a2af5bfa24aa18333` |
+| Fame DTB | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `5724` | `992d1ec61a4516f1aaa2fdbbfe8203c59c606dd200c4930e1773621dcd18bf16` |
+| PIE APPSBL U-Boot payload with external DTB | `out/fame/u-boot-build/u-boot-dtb.bin` | `345092` | `cf0dedd86d260b6c8e43c51758ca719a277dc9bcb32c7c502e2663cc227b1c1d` |
+| Legacy standalone image for `fastboot boot` | `out/fame/u-boot/u-boot-fame-fastboot.uimg` | `345156` | `f285e57f86551e50c923eac1ad50e60557e96994a3a93588b27254dc2fa379f2` |
+| Block-aligned appsbl MBN for `fastboot flash UEFI` | `out/fame/u-boot/u-boot-fame-uefi.mbn` | `345600` | `cef37aff215731429e39e1c6b32285622da514edd6187464bf70f208a8cefd53` |
 
-Volatile PIE test sequence from raw U-Boot fastboot:
+The PIE APPSBL defconfig links U-Boot at `0x88f00000`, auto-runs `fastboot usb 0`, enables the block-backed eMMC fastboot backend, and includes the MSM8960 GCC provider for SDC1, USB HS1, and GSBI5 UART clocks. `CONFIG_SYS_BOOTM_LEN=0x04000000` gives U-Boot enough bootm copy/decompression room for the current Fame `Image.gz` payload. The current external DTB intentionally omits the untested `simple-framebuffer` reservation so U-Boot LMB can load the kernel at `0x80208000`. The current live Linux boot procedure explicitly sets `fdt_high=0xffffffff` and `initrd_high=0xffffffff` before `fastboot boot`, so U-Boot passes both the selected FDT and Android boot-image ramdisk in place instead of relocating them into unsafe or exhausted memory.
+
+The volatile U-Boot image is not an Android boot image. It is a legacy `ARM U-Boot Standalone Program` with load and entry address `0x82000040`, so persistent U-Boot's default `fastboot boot` path can execute it through `bootm` directly. The extra `0x40` skips the legacy image header in the fastboot download buffer and avoids the previous accidental Android/Linux FDT handoff path. Set `autostart=yes` before this volatile test so standalone `bootm` payloads execute instead of only setting `filesize` and returning.
+
+Volatile non-flashing test from persistent U-Boot fastboot:
+
+```sh
+fastboot -s <fame-serial> oem 'run:setenv autostart yes'
+fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd'
+fastboot -s <fame-serial> boot out/fame/u-boot/u-boot-fame-fastboot.uimg
+```
+
+A stale in-RAM `fastboot_bootcmd` can override U-Boot's default `fastboot boot` handling, so unset it before testing the legacy standalone image. A previous Android-wrapper attempt without the override fell into U-Boot's Linux `bootm` path and failed with `FDT and ATAGS support not compiled in`.
+
+Persistent UEFI update from U-Boot fastboot, only after explicit approval:
+
+```sh
+fastboot -s <fame-serial> flash UEFI out/fame/u-boot/u-boot-fame-uefi.mbn
+fastboot -s <fame-serial> oem 'run:reset'
+```
+
+Earlier volatile PIE staging sequence from raw U-Boot fastboot:
 
 ```sh
 fastboot -s <fame-serial> stage out/fame/u-boot-fame-appsbl-pie/u-boot-dtb.bin
 fastboot -s <fame-serial> oem 'run:go 0x82000000'
 ```
 
-This test does not write flash. If using an Android boot-image wrapper instead, escape semicolons when setting `fastboot_bootcmd` or U-Boot will execute the `bootm loados`/`go` commands immediately during `setenv`.
+This raw staging test does not write flash. When using an Android boot-image wrapper instead, escape semicolons when setting `fastboot_bootcmd` or U-Boot will execute the `bootm loados`/`go` commands immediately during `setenv`.
 
 The staged PIE build that added I-cache-only startup and `qcom,pshold` sysreset support re-enumerated as U-Boot fastboot, bound `qcom_pshold` at `restart@800820`, and rebooted back to persistent U-Boot fastboot when `reset` was run through `fastboot oem 'run:reset'`.
 
 A follow-up staged PIE D-cache test built `out/fame/u-boot-fame-appsbl-pie-dcache/u-boot-dtb.bin` from `nokia_fame_appsbl_pie_defconfig` with `CONFIG_SYS_DCACHE_OFF` unset and the ARM32 Snapdragon cache hook calling both `icache_enable()` and `dcache_enable()`. The staged payload was `344672` bytes, re-enumerated as `U-Boot 2026.07-rc2-00036-g40befb1f6543-dirty`, probed eMMC at 48 MHz 8-bit high-speed mode, fetched the currently flashed `UEFI` partition successfully, and rebooted back to persistent U-Boot fastboot through `qcom,pshold` reset.
 
-Live result reported by the user: flashing the short MBN artifact to `UEFI` was accepted by SBL3, and raw APPSBL U-Boot got far enough to bring up USB and fastboot. UART became garbage at U-Boot `serial_init()`, so if USB fastboot had failed this image would not have had the earlier UART `mw.l` recovery path. The same issue reproduced through the LK-safe trampoline. Root cause was a UARTDM v1.3 clock/CSR mismatch: U-Boot programmed GSBI5 UART to 7.3728 MHz while the v1.3 driver uses fixed CSR `0xff`, matching LK's 1.8432 MHz UART clock. The current build programs GSBI5 UART to 1.8432 MHz from PLL8 and keeps USB/UDC clock programming unchanged.
+Live result reported by the user: flashing the short MBN artifact to `UEFI` was accepted by SBL3, and raw APPSBL U-Boot got far enough to bring up USB and fastboot. UART became garbage at U-Boot `serial_init()`, so if USB fastboot had failed this image would not have had the earlier UART `mw.l` recovery path. The same issue reproduced through the temporary LK-wrapper experiments. Root cause was a UARTDM v1.3 clock/CSR mismatch: U-Boot programmed GSBI5 UART to 7.3728 MHz while the v1.3 driver uses fixed CSR `0xff`, matching LK's 1.8432 MHz UART clock. The current build programs GSBI5 UART to 1.8432 MHz from PLL8 and keeps USB/UDC clock programming unchanged.
 
 The current build also fixes raw APPSBL fastboot serial number reporting. If previous-stage bootargs do not provide `androidboot.serialno`, Fame initializes eMMC nonfatally during late board init, derives `serial#` from the 32-bit eMMC CID product serial number, and formats it as lowercase hex to match Android4Lumia LK's `target_serialno()` behavior. This lets host-side `fastboot -s <serial>` scoping work consistently across LK and U-Boot without recording IMEI or other personal identifiers in git.
 

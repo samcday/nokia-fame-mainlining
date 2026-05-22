@@ -23,7 +23,7 @@ Usage: ./build-u-boot.sh [KEY=value ...]
 Builds the canonical Fame DTB, builds position-independent APPSBL U-Boot, then
 packages the same u-boot-dtb.bin as:
 
-  1. an Android boot image for non-flashing `fastboot boot` from U-Boot fastboot
+  1. a legacy U-Boot standalone image for non-flashing `fastboot boot`
   2. a Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`
 
 Environment overrides:
@@ -39,14 +39,9 @@ Environment overrides:
   CROSS_COMPILE         ARM GCC cross prefix, e.g. arm-none-eabi-
   JOBS                  make -j value (default: nproc)
   TEXT_BASE             APPSBL MBN load address (default: 0x88F00000)
-  BOOT_BASE             Android boot-image base (default: 0x82000000)
-  BOOT_KERNEL_OFFSET    U-Boot offset from BOOT_BASE (default: 0x00000000)
-  BOOT_RAMDISK_OFFSET   Android boot-image ramdisk offset (default: 0x02000000)
-  BOOT_TAGS_OFFSET      Android boot-image tags offset (default: 0x00000100)
-  BOOT_PAGESIZE         Android boot-image page size (default: 4096)
-  BOOT_CMDLINE          Android boot-image cmdline (default: empty)
   FASTBOOT_BUF_ADDR     Runtime fastboot download buffer (default: 0x82000000)
-  BOOT_IMAGE_NAME       `fastboot boot` image (default: u-boot-fame-fastboot.img)
+  BOOT_IMAGE_LOAD_ADDR  Legacy image load/entry address (default: FASTBOOT_BUF_ADDR + 0x40)
+  BOOT_IMAGE_NAME       `fastboot boot` image (default: u-boot-fame-fastboot.uimg)
   UEFI_MBN_NAME         `fastboot flash UEFI` MBN (default: u-boot-fame-uefi.mbn)
   MBN_PAYLOAD_ALIGN     Payload alignment in the APPSBL header (default: 8)
   FASTBOOT_FLASH_ALIGN  Output MBN file alignment for block flash (default: 512)
@@ -82,14 +77,9 @@ DTB=${DTB:-qcom-msm8227-nokia-fame.dtb}
 LINUX_DT_TARGET=${LINUX_DT_TARGET:-dtbs}
 JOBS=${JOBS:-$(nproc)}
 TEXT_BASE=${TEXT_BASE:-0x88F00000}
-BOOT_BASE=${BOOT_BASE:-0x82000000}
-BOOT_KERNEL_OFFSET=${BOOT_KERNEL_OFFSET:-0x00000000}
-BOOT_RAMDISK_OFFSET=${BOOT_RAMDISK_OFFSET:-0x02000000}
-BOOT_TAGS_OFFSET=${BOOT_TAGS_OFFSET:-0x00000100}
-BOOT_PAGESIZE=${BOOT_PAGESIZE:-4096}
-BOOT_CMDLINE=${BOOT_CMDLINE:-}
 FASTBOOT_BUF_ADDR=${FASTBOOT_BUF_ADDR:-0x82000000}
-BOOT_IMAGE_NAME=${BOOT_IMAGE_NAME:-u-boot-fame-fastboot.img}
+BOOT_IMAGE_LOAD_ADDR=${BOOT_IMAGE_LOAD_ADDR:-$(printf '0x%08x' $((FASTBOOT_BUF_ADDR + 0x40)))}
+BOOT_IMAGE_NAME=${BOOT_IMAGE_NAME:-u-boot-fame-fastboot.uimg}
 UEFI_MBN_NAME=${UEFI_MBN_NAME:-u-boot-fame-uefi.mbn}
 MBN_PAYLOAD_ALIGN=${MBN_PAYLOAD_ALIGN:-8}
 FASTBOOT_FLASH_ALIGN=${FASTBOOT_FLASH_ALIGN:-512}
@@ -97,7 +87,6 @@ UEFI_PARTITION_SIZE=${UEFI_PARTITION_SIZE:-2560000}
 SKIP_LINUX=${SKIP_LINUX:-0}
 SKIP_UBOOT=${SKIP_UBOOT:-0}
 
-BOOT_KERNEL_ADDR=$(printf '0x%08x' $((BOOT_BASE + BOOT_KERNEL_OFFSET)))
 DTB_PATH="$LINUX_BUILD_DIR/arch/arm/boot/dts/qcom/$DTB"
 U_BOOT_BIN="$U_BOOT_BUILD_DIR/u-boot-dtb.bin"
 BOOT_IMAGE="$OUT_DIR/$BOOT_IMAGE_NAME"
@@ -110,7 +99,6 @@ UEFI_MBN="$OUT_DIR/$UEFI_MBN_NAME"
 [[ -f "$U_BOOT_DIR/configs/$DEFCONFIG" ]] || die "U-Boot defconfig not found: $DEFCONFIG"
 
 need make
-need mkbootimg
 need perl
 need sha256sum
 need stat
@@ -166,6 +154,16 @@ fi
 [[ -f "$U_BOOT_BIN" ]] || die "missing U-Boot payload: $U_BOOT_BIN"
 [[ -f "$U_BOOT_BUILD_DIR/.config" ]] || die "missing U-Boot config: $U_BOOT_BUILD_DIR/.config"
 
+if [[ -n "${MKIMAGE:-}" ]]; then
+	[[ -x "$MKIMAGE" ]] || die "mkimage not executable: $MKIMAGE"
+elif [[ -x "$U_BOOT_BUILD_DIR/tools/mkimage" ]]; then
+	MKIMAGE="$U_BOOT_BUILD_DIR/tools/mkimage"
+elif have mkimage; then
+	MKIMAGE=mkimage
+else
+	die "missing required tool: mkimage"
+fi
+
 config_text_base=
 while IFS='=' read -r key value; do
 	if [[ "$key" == CONFIG_TEXT_BASE ]]; then
@@ -177,24 +175,17 @@ done < "$U_BOOT_BUILD_DIR/.config"
 [[ $((TEXT_BASE)) -eq $((config_text_base)) ]] || \
 	die "TEXT_BASE=$TEXT_BASE does not match U-Boot CONFIG_TEXT_BASE=$config_text_base"
 
-printf '==> Packaging Android boot image\n'
-mkbootimg_args=(
-	--header_version 0
-	--kernel "$U_BOOT_BIN"
-	--base "$BOOT_BASE"
-	--kernel_offset "$BOOT_KERNEL_OFFSET"
-	--ramdisk_offset "$BOOT_RAMDISK_OFFSET"
-	--tags_offset "$BOOT_TAGS_OFFSET"
-	--pagesize "$BOOT_PAGESIZE"
-	--board nokia-fame
-	-o "$BOOT_IMAGE"
-)
-
-if [[ -n "$BOOT_CMDLINE" ]]; then
-	mkbootimg_args+=(--cmdline "$BOOT_CMDLINE")
-fi
-
-mkbootimg "${mkbootimg_args[@]}"
+printf '==> Packaging legacy U-Boot standalone image\n'
+"$MKIMAGE" \
+	-A arm \
+	-O u-boot \
+	-T standalone \
+	-C none \
+	-a "$BOOT_IMAGE_LOAD_ADDR" \
+	-e "$BOOT_IMAGE_LOAD_ADDR" \
+	-n nokia-fame-u-boot \
+	-d "$U_BOOT_BIN" \
+	"$BOOT_IMAGE"
 
 printf '==> Packaging Qualcomm appsbl-style MBN\n'
 perl -e '
@@ -272,10 +263,11 @@ printf '    flash pad:    %s bytes to %s-byte fastboot block alignment\n' \
 	"$fastboot_pad" "$FASTBOOT_FLASH_ALIGN"
 printf '    APPSBL load:  %s\n' "$TEXT_BASE"
 printf '    boot buffer:  %s\n' "$FASTBOOT_BUF_ADDR"
-printf '    boot kernel:  %s\n' "$BOOT_KERNEL_ADDR"
+printf '    uImage entry: %s\n' "$BOOT_IMAGE_LOAD_ADDR"
 
 printf '\nVolatile non-flashing test from persistent U-Boot fastboot:\n'
-printf "  fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd abootimg addr %s\\; bootm start %s\\; bootm loados\\; go %s'\n" "$FASTBOOT_BUF_ADDR" "$FASTBOOT_BUF_ADDR" "$BOOT_KERNEL_ADDR"
+printf "  fastboot -s <fame-serial> oem 'run:setenv autostart yes'\n"
+printf "  fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd'\n"
 printf '  fastboot -s <fame-serial> boot %q\n' "$BOOT_IMAGE"
 
 printf '\nPersistent UEFI update from U-Boot fastboot, only after explicit approval:\n'

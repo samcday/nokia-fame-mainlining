@@ -19,7 +19,9 @@ Build a first Linux boot image with:
 Boot it from persistent U-Boot without writing flash:
 
 ```sh
-fastboot boot out/fame/fame-linux-fastboot.img
+fastboot -s 7cda982 oem 'run:setenv fdt_high 0xffffffff; setenv initrd_high 0xffffffff; printenv fdt_high initrd_high'
+fastboot -s 7cda982 oem console
+fastboot -s 7cda982 boot out/fame/fame-linux-fastboot.img
 ```
 
 Safe read-only BootMgr/Lumia inventory commands live in `~/src/lp-externals` if stock BootMgr/FlashApp is restored:
