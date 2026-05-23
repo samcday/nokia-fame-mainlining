@@ -45,6 +45,8 @@ The local `samsung-expressltexx` kernel branch is a high-value MSM8930 sibling r
 
 ## Kernel Notes
 
+NOTE: mainline kernel has a lot of existing driver infrastructure for armv7 qcom devices, but a lot of bitrot has taken hold, do *not* assume that upstream code is infallible. Quite the opposite, be very distrustful of it and assume it's riddled with bugs and glaring issues.
+
 `linux/` work must target upstreamable Linux kernel patches from current mainline. Use `msm8227-mainline` and community trees only as references, not as the source of truth or a base to polish.
 
 The active `linux/` and `u-boot/` branches are bring-up integration branches, not submission branches. Keep them recoverable by committing early and regularly rather than accumulating large uncommitted experiments. Use kernel-style subjects and commit messages for changes that appear upstreamable. Prefix uncertain exploratory commits with `WIP:`. Prefix intentionally dirty instrumentation, debug hacks, or throwaway experiments with `HACK:`. Do not bury debug logging or speculative hardware guesses in clean-looking commits; either document the evidence in `notes/*.md` and make it a real patch, or mark the commit honestly as WIP/HACK.
