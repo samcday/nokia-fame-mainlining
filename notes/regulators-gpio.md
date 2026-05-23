@@ -76,3 +76,25 @@ default/sleep states.
 | Stock ACPI exposes TLMM as `GIO0` / `QCOM0500`; Samsung Express MSM8930 models the shared TLMM block as `qcom,msm8960-pinctrl` at `0x00800000`, size `0x4000`, 152 GPIOs, and GIC SPI 16. | `dsdt.dsl:17194-17219`, `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:443-452` | A/E |
 | Mainline's MSM8960 TLMM binding and driver expose SDCC1 groups `sdc1_clk`, `sdc1_cmd`, and `sdc1_data` under `qcom,msm8960-pinctrl`. | `linux/Documentation/devicetree/bindings/pinctrl/qcom,msm8960-pinctrl.yaml:16-31,51-60`, `linux/drivers/pinctrl/qcom/pinctrl-msm8960.c:329-334,1212-1214,1238-1240` | E |
 | Samsung Express SDCC1 default pinctrl uses clock drive strength 16 with bias disabled, command/data drive strength 10 with pull-ups, and sleep drive strength 2 for all SDCC1 groups. | `samsung-expressltexx:arch/arm/boot/dts/qcom/qcom-msm8930-samsung-expressltexx.dts:298-304,382-420` | E |
+
+## PM8038 DSI Rails (L2, L8) RPM Resource Derivation
+
+DSI bring-up adds PM8038 **L2** (`dsi_vdda` 1.2V) and **L8** (`dsi_vdc`/mainline `avdd`
+2.8-3.0V) to the Express-derived RPM regulator driver. L11 (`dsi_vddio` 1.8V) is already
+supported and always-on. Mainline `qcom_rpm_resource` is `{target_id, status_id, select_id,
+size}` (`drivers/mfd/qcom_rpm.c:22-27`).
+
+Downstream select IDs (`community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/include/mach/rpm-8930.h:71,77`):
+PM8038 L2 SEL=37, L8 SEL=43. These match mainline's existing PM8038 select_ids
+(L3=38, L5=40, L11=46). Every entry of `msm8930_rpm_resource_table` obeys `target=2*sel+30`,
+`status=2*sel-29`; the SEL=43 slot is confirmed directly by `QCOM_RPM_PM8917_LDO6 = {116, 57,
+43, 2}` (`drivers/mfd/qcom_rpm.c:353`).
+
+| Rail | Tuple `{target,status,select,size}` | Regulator type | Voltage | Trust |
+| --- | --- | --- | --- | --- |
+| PM8038 L2 | `{104, 45, 37, 2}` | `pm8921_nldo` | 1.2V | C, formula + downstream SEL |
+| PM8038 L8 | `{116, 57, 43, 2}` | `pm8921_pldo` | 2.8-3.0V | C, confirmed via shared SEL=43 slot |
+
+New dt-binding constants go after the current PM8917 block in
+`include/dt-bindings/mfd/qcom-rpm.h` (next free indices). Regulator types mirror the Express
+PM8917 choices: L2 (low-voltage) -> `pm8921_nldo`, L8 -> `pm8921_pldo`.

@@ -120,8 +120,37 @@ Keep the framebuffer facts above for later UEFI/simpledrm experiments, but do
 not reserve that memory in `qcom-msm8227-nokia-fame.dts` for the first UART/UDC
 bring-up path.
 
+## Panel Power And Reset Decode
+
+Decoded from the Android4Lumia fame downstream (`lineage_fame_defconfig` ->
+`MACH_MSM8627` -> `board-8930-display.c`, which carries the Orise FWVGA panel),
+cross-checked against the `samsung-expressltexx` MSM8930 effort and the mainline
+msm DSI regulator model. The stock-FFU `DSI_PANEL_RESET` (DSDT GPU0 resource 15,
+still undecoded) would upgrade the reset GPIO from C to A.
+
+| Fact | Value | Source | Trust |
+| --- | --- | --- | --- |
+| Display board file for fame | `board-8930-display.c` (mipi_video_orise_fwvga) | A4L `lineage_fame_defconfig`=MACH_MSM8627; `arch/arm/mach-msm/Makefile` board-8930-all-objs | C |
+| Panel reset GPIO | MSM TLMM GPIO 58, active low (`disp_rst_n`), 2mA, no pull | A4L `board-8930-display.c:106,124-138` | C |
+| Reset release pulse | high, 2ms, low, 2ms, high | A4L `board-8930-display.c:129-138` | C |
+| `dsi_vdda` (DSI PHY analog) | 1.2V -> PM8038 **L2** | A4L `board-8930-display.c:160-173`; `board-8930-regulator-pm8038.c:34-42` (VREG_CONSUMERS L2) | C |
+| `dsi_vdc` (panel VDD / mainline `avdd`) | 2.8-2.85V -> PM8038 **L8** | A4L `board-8930-display.c:176-190,243-245`; `board-8930-regulator-pm8038.c:63-66` (VREG_CONSUMERS L8) | C |
+| `dsi_vddio` (panel/DSI IO) | 1.8V -> PM8038 **L11** (already always-on in Fame DTS) | A4L `board-8930-display.c:193-207`; `board-8930-regulator-pm8038.c:103-124` (VREG_CONSUMERS L11) | C |
+| DSI data lane map | `data-lanes = <1 2>` (downstream dlane_swap=1; PCFG host lane mapping 1) | A4L + PCFG above | C |
+
+Mainline supply attachment (`drivers/gpu/drm/msm/dsi/dsi_cfg.c` `apq8064_dsi_regulators`;
+`dsi/phy/dsi_phy_28nm_8960.c` `dsi_phy_28nm_8960_regulators`):
+
+- `dsi@4700000`: `vdda-supply` (1.2V, L2), `avdd-supply` (3.0V, L8), `vddio-supply` (1.8V, L11)
+- `phy@4700200`: `vddio-supply` (1.8V, L11)
+- `panel@0`: reset-gpios only; panel VDD arrives via the DSI host `avdd`, mirroring the
+  Express AMS452GP32 panel node (no panel-local supply phandle).
+
+The mainline DSI host enables `vdda`/`avdd`/`vddio` before calling the panel's `prepare()`,
+so the panel driver only sequences reset + sends the Teisko init commands.
+
 ## Next Work
 
 1. Re-test simple framebuffer only from a boot path that proves the display buffer is live and does not overlap the ARM kernel load/decompression window.
-2. Decode panel supply, reset, and backlight resources from ACPI or another tier-A source before enabling MDP/DSI.
+2. Confirm panel reset GPIO 58 against stock-FFU `DSI_PANEL_RESET` (DSDT resource 15) to reach Tier A.
 3. Translate PCFG timings and DSI values into a Linux panel description only after reset/backlight/power sequencing is credible.
