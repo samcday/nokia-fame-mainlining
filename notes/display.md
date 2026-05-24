@@ -292,13 +292,53 @@ MDP4 HACK commit trail (linux branch `nokia-fame`, on top of the earlier
 diagnostics `09ede3fe`..`170d1f05`): `24ac55b0` add reset bracket (no-op),
 `86fdbb6f` try 200 MHz (still hung), `8daf5173` PXO 27 MHz (**works**).
 
+## PLL2 (MM_PLL1) Won't Lock -- MDP Runs From PLL8 (2026-05-24, boot-22)
+
+boot-21's "PLL2 never locks" was a hypothesis; boot-22 proved it and found the
+likely reason. Live probing via `fastboot oem run`/`oem console` (`md`/`mw`,
+device `7cda982`) plus an in-kernel lock-poll settled it:
+
+- PLL2's L/M/N/config ARE correctly programmed by SBL for **800 MHz**: MMCC
+  `0x031c` mode, `0x0320` L=0x1d(29), `0x0324` M=0x11(17), `0x0328` N=0x1b(27),
+  `0x032c` config=`0x00c20000` (vco `0x2<<16`, mn_ena BIT22, main_out BIT23) --
+  matches upstream `pll15_config` bit-for-bit. But mode=0 (left disabled).
+- Enabling it (BYPASSNL|RESET_N|OUTCTRL), both enable orders, never sets the
+  lock bit (status `0x0334` bit16). U-Boot: 0 after >100 ms. In-kernel (boot-22,
+  helper polled bit16 for 500 us): `lock=0` (status 0x0->0x1, bit0 only). So it
+  is NOT a U-Boot reference/power starvation artefact.
+- Positive control: **PLL8** (GCC `0x903158`) reads `0x00010001` -- bit16 LOCKED
+  (L=14 -> 384 MHz, canonical). So lock-detect works; PLL2 genuinely won't lock.
+
+Neither mainline (`mmcc-msm8960.c` configures only pll15 in probe) nor fame's
+downstream (`clock-8960.c` `pll2_clk` = bare mode_reg, 800 MHz) carries PLL2
+bring-up data -- both defer to the bootloader. Our raw-U-Boot/SBL path doesn't
+fully bring MM_PLL1 up (likely the `TEST_CTL` `0x0330` VCO calibration, left 0),
+and we don't have Nokia's value.
+
+**Conclusion:** msm8227 is a low-end part that likely does not fit/use MM_PLL1.
+The msm8960 driver's 160-266 MHz MDP rates (all P_PLL2) are inapplicable here;
+MDP must run from **PLL8** (the `<=128 MHz` rows of `clk_tbl_mdp`, externally
+voted + proven locked). `mdp4_kms.c max_clk` is now `128000000` (commit
+`3e69030c`); 128 MHz >> the ~33 MHz this 480x800 panel needs. **Test boot
+pending a free device** (another session holds `7cda982`).
+
+**Golden-state cross-check (planned, Sam):** reflash unlocked UEFI, chain
+U-Boot in EFIESP where the display is lit, then dump the *working* MDP clock
+tree to confirm what it actually drives MDP from (expect PLL8, PLL2 unlocked):
+`mdp_src` RCG -- `md.l 0x040000c0`(bank) `0x040000c4`/`0x040000c8`(md)
+`0x040000d0`(ns, src-sel+div); PLL mode+status PLL8 `0x903140`/`0x903158`,
+PLL2 `0x0400031c`/`0x04000334`, PLL15 `0x04000338`/`0x04000350`; footswitch
+`0x04000190`; DSI PLL (offsets TBD on the day).
+
 ## Next Work
 
-1. **Operating clock:** move `mdp_clk` off the 27 MHz PXO diagnostic rate onto a
-   `P_PLL8` rate (e.g. 128/96 MHz) high enough to feed scanout without
-   underflow (PLL8 is externally voted and known-good). Separately decide
-   whether to fix PLL2 lock in `mmcc-msm8960.c` (`pll2` clk_pll) or just keep
-   MDP on PLL8. Give `mdp4_kms_init` `max_clk` a real value (the TODO comment).
+1. **Operating clock (DONE pending test):** PLL2-vs-PLL8 is decided -- PLL2 won't
+   lock (see boot-22 section), so `max_clk` is now `128000000` (P_PLL8) in commit
+   `3e69030c`. **Flash + boot-23 on a free device** to confirm `mdp_src` runs at
+   128 MHz off PLL8 and see whether the `0x100` underflow changes (it may persist
+   until DSI/panel exist). Note `fdt_high=0xffffffff; initrd_high=0xffffffff` are
+   required in U-Boot env before `fastboot boot` or bootm fails with
+   "ramdisk - allocation error" and wedges (no software reset).
 2. **Scanout / DSI / panel:** chase `errors: 00000100` + `vblank time out` --
    likely the Teisko panel/DSI video path isn't scanning out (panel reset GPIO
    58, DSI video mode, Teisko init sequence); vblank needs the DSI link to
