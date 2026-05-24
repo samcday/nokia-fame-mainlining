@@ -8,7 +8,7 @@ This repository is the workspace and research ledger. Keep source facts, provena
 
 ## Current Test Bias
 
-UART output is available after hardware rework. Treat host-to-device UART input as unreliable until proven; persistent U-Boot fastboot is the primary non-flashing kernel test path.
+UART RX/TX is available after hardware rework. Persistent U-Boot fastboot is the primary non-flashing kernel test path.
 
 Build a first Linux boot image with:
 
@@ -57,15 +57,15 @@ FFU  = RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu
 
 | Area | Current State | Notes |
 | --- | --- | --- |
-| BootMgr inventory | Historical | `lp-externals` has read-only `NOKV` and `NOKT` support; the live device currently boots U-Boot instead of Nokia BootMgr. |
+| BootMgr inventory | Historical | `lp-externals` has read-only `NOKV` and `NOKT` support; the live device currently boots raw APPSBL U-Boot instead of Nokia BootMgr. |
 | FFU inventory | Working | Stock RM-914 / `059S083` FFU and PLAT/ACPI artifacts are inventoried under `notes/`. |
 | Kernel DTS | Candidate | `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts` has minimal UART, USB1/ULPI, SDCC1/eMMC, and PSHOLD support and builds with `qcom_defconfig`. |
-| Kernel boot harness | Candidate | `./build-linux-fastboot.sh` packages `Image.gz`, Android boot-image v2 DTB payload, and the local mini-initrd for non-flashing `fastboot boot` from persistent U-Boot. |
-| U-Boot | Working | Persistent raw APPSBL U-Boot in `UEFI` enumerates USB fastboot and supports `reboot`, `flash`, `fetch`, `oem run`, and `oem console`. |
-| UART | Candidate | Device-to-host UART output is available; host-to-device RX is suspected damaged. |
+| Kernel boot harness | Working | `./build-linux-fastboot.sh` packages `Image.gz`, Android boot-image v2 DTB payload, and the local mini-initrd for non-flashing `fastboot boot` from persistent U-Boot. |
+| U-Boot | Working | Raw APPSBL U-Boot in `UEFI` cold-boots to USB fastboot again and reports `product: nokia-fame`; the current working artifact is the dirty `a842285fe134` build with MSM USB PHY/reset init changes. |
+| UART | Working | Device-to-host UART output and host-to-device RX are available. |
 | Display | Hypothesis | FFU PCFG says Teisko 480x800 24bpp DSI; simple framebuffer handoff still needs hardware testing. |
 | Touch | Hypothesis | FFU ACPI corroborates I2C address `0x4b`, IRQ GPIO11, and reset GPIO52; controller identity and supplies remain unvalidated. |
-| USB gadget/UDC | Working / Candidate | U-Boot ChipIdea/ULPI fastboot works; Linux UDC is the next hardware test via the mini-initrd CDC-ACM gadget. |
+| USB gadget/UDC | Working | Persistent raw APPSBL U-Boot, LK fastboot, and LK-chain U-Boot ChipIdea/ULPI fastboot work. Linux UDC has been tested via the mini-initrd CDC-ACM gadget. |
 | eMMC | Working | U-Boot initializes SDCC1/eMMC, reports the 8-bit MMC 4.5 device, reads blocks, and lists GPT partitions. |
 
 ## Useful Files
@@ -77,7 +77,7 @@ FFU  = RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu
 | `STATUS.md` | Current implementation state and next work. |
 | `build-linux-fastboot.sh` | Builds Linux, mini-initrd, and a non-flashing Android boot image for persistent U-Boot `fastboot boot`. |
 | `build-minitrd.sh` | Builds the mkosi/APK BusyBox mini-initrd used for UART and CDC-ACM gadget shell tests. |
-| `build-u-boot.sh` | Builds the Linux DTB, PIE APPSBL U-Boot, a non-flashing legacy standalone `fastboot boot` image, and a `fastboot flash UEFI` MBN. |
+| `build-u-boot.sh` | Builds the Linux DTB, PIE APPSBL U-Boot, a non-flashing legacy standalone `fastboot boot` image, a `fastboot flash UEFI` MBN, and a FlashApp raw `UEFI` image. |
 | `notes/source-trust.md` | Trust model for FFU/live/community/adjacent facts. |
 | `notes/prior-art-index.md` | Submodule inventory and key source paths. |
 | `notes/bootmgr-protocol.md` | Read-only BootMgr/Lumia USB protocol notes. |

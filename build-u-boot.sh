@@ -25,6 +25,7 @@ packages the same u-boot-dtb.bin as:
 
   1. a legacy U-Boot standalone image for non-flashing `fastboot boot`
   2. a Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`
+  3. a full UEFI partition image for FlashApp/lp-externals raw writes
 
 Environment overrides:
 
@@ -43,9 +44,10 @@ Environment overrides:
   BOOT_IMAGE_LOAD_ADDR  Legacy image load/entry address (default: FASTBOOT_BUF_ADDR + 0x40)
   BOOT_IMAGE_NAME       `fastboot boot` image (default: u-boot-fame-fastboot.uimg)
   UEFI_MBN_NAME         `fastboot flash UEFI` MBN (default: u-boot-fame-uefi.mbn)
+  UEFI_RAW_NAME         Raw UEFI partition image (default: UEFI-u-boot-fame-uefi.bin)
   MBN_PAYLOAD_ALIGN     Payload alignment in the APPSBL header (default: 8)
   FASTBOOT_FLASH_ALIGN  Output MBN file alignment for block flash (default: 512)
-  UEFI_PARTITION_SIZE   Maximum UEFI partition size in bytes (default: 2560000)
+  UEFI_PARTITION_SIZE   Raw UEFI partition image size in bytes (default: 2560000)
   SKIP_LINUX=1          Reuse existing Linux DTB
   SKIP_UBOOT=1          Reuse existing U-Boot build artifact
 
@@ -81,6 +83,7 @@ FASTBOOT_BUF_ADDR=${FASTBOOT_BUF_ADDR:-0x82000000}
 BOOT_IMAGE_LOAD_ADDR=${BOOT_IMAGE_LOAD_ADDR:-$(printf '0x%08x' $((FASTBOOT_BUF_ADDR + 0x40)))}
 BOOT_IMAGE_NAME=${BOOT_IMAGE_NAME:-u-boot-fame-fastboot.uimg}
 UEFI_MBN_NAME=${UEFI_MBN_NAME:-u-boot-fame-uefi.mbn}
+UEFI_RAW_NAME=${UEFI_RAW_NAME:-UEFI-u-boot-fame-uefi.bin}
 MBN_PAYLOAD_ALIGN=${MBN_PAYLOAD_ALIGN:-8}
 FASTBOOT_FLASH_ALIGN=${FASTBOOT_FLASH_ALIGN:-512}
 UEFI_PARTITION_SIZE=${UEFI_PARTITION_SIZE:-2560000}
@@ -91,6 +94,7 @@ DTB_PATH="$LINUX_BUILD_DIR/arch/arm/boot/dts/qcom/$DTB"
 U_BOOT_BIN="$U_BOOT_BUILD_DIR/u-boot-dtb.bin"
 BOOT_IMAGE="$OUT_DIR/$BOOT_IMAGE_NAME"
 UEFI_MBN="$OUT_DIR/$UEFI_MBN_NAME"
+UEFI_RAW="$OUT_DIR/$UEFI_RAW_NAME"
 
 [[ -d "$LINUX_DIR" ]] || die "kernel tree not found: $LINUX_DIR"
 [[ -f "$LINUX_DIR/Makefile" ]] || die "kernel Makefile not found in: $LINUX_DIR"
@@ -187,12 +191,12 @@ printf '==> Packaging legacy U-Boot standalone image\n'
 	-d "$U_BOOT_BIN" \
 	"$BOOT_IMAGE"
 
-printf '==> Packaging Qualcomm appsbl-style MBN\n'
+printf '==> Packaging Qualcomm appsbl-style MBN and raw UEFI image\n'
 perl -e '
 use strict;
 use warnings;
 
-my ($payload, $mbn, $base_arg, $payload_align_arg, $file_align_arg, $part_size_arg) = @ARGV;
+my ($payload, $mbn, $raw, $base_arg, $payload_align_arg, $file_align_arg, $part_size_arg) = @ARGV;
 my $base = $base_arg =~ /^0x/i ? hex($base_arg) : int($base_arg);
 my $payload_align = int($payload_align_arg);
 my $file_align = int($file_align_arg);
@@ -201,9 +205,15 @@ my $payload_size = -s $payload;
 die "missing payload\n" unless defined $payload_size;
 die "invalid payload alignment\n" unless $payload_align > 0;
 die "invalid file alignment\n" unless $file_align > 0;
+die "invalid partition size\n" unless $part_size > 0;
 
 my $aligned_payload_size = int(($payload_size + $payload_align - 1) / $payload_align) * $payload_align;
 my $payload_pad = $aligned_payload_size - $payload_size;
+my $mbn_payload_size = 40 + $aligned_payload_size;
+my $aligned_file_size = int(($mbn_payload_size + $file_align - 1) / $file_align) * $file_align;
+my $file_pad = $aligned_file_size - $mbn_payload_size;
+die "MBN size $aligned_file_size exceeds partition size $part_size\n" if $aligned_file_size > $part_size;
+my $raw_pad = $part_size - $aligned_file_size;
 
 my $header = pack("V10",
 	0x00000005,
@@ -220,47 +230,70 @@ my $header = pack("V10",
 
 open my $in, "<:raw", $payload or die "open $payload: $!\n";
 open my $out, ">:raw", $mbn or die "open $mbn: $!\n";
+open my $raw_out, ">:raw", $raw or die "open $raw: $!\n";
 print {$out} $header or die "write $mbn: $!\n";
+print {$raw_out} $header or die "write $raw: $!\n";
 while (1) {
 	my $buf;
 	my $n = read($in, $buf, 1024 * 1024);
 	die "read $payload: $!\n" unless defined $n;
 	last if $n == 0;
 	print {$out} $buf or die "write $mbn: $!\n";
+	print {$raw_out} $buf or die "write $raw: $!\n";
 }
-print {$out} "\0" x $payload_pad or die "pad payload in $mbn: $!\n" if $payload_pad;
 
-my $mbn_payload_size = 40 + $aligned_payload_size;
-my $aligned_file_size = int(($mbn_payload_size + $file_align - 1) / $file_align) * $file_align;
-my $file_pad = $aligned_file_size - $mbn_payload_size;
-print {$out} "\0" x $file_pad or die "pad $mbn: $!\n" if $file_pad;
+if ($payload_pad) {
+	my $pad = "\0" x $payload_pad;
+	print {$out} $pad or die "pad payload in $mbn: $!\n";
+	print {$raw_out} $pad or die "pad payload in $raw: $!\n";
+}
+
+if ($file_pad) {
+	my $pad = "\0" x $file_pad;
+	print {$out} $pad or die "pad $mbn: $!\n";
+	print {$raw_out} $pad or die "pad $raw: $!\n";
+}
 close $out or die "close $mbn: $!\n";
-close $in or die "close $payload: $!\n";
 
-die "MBN size $aligned_file_size exceeds partition size $part_size\n" if $aligned_file_size > $part_size;
-' "$U_BOOT_BIN" "$UEFI_MBN" "$TEXT_BASE" "$MBN_PAYLOAD_ALIGN" \
+if ($raw_pad) {
+	my $zeroes = "\0" x (1024 * 1024);
+	while ($raw_pad > 0) {
+		my $n = $raw_pad < length($zeroes) ? $raw_pad : length($zeroes);
+		print {$raw_out} substr($zeroes, 0, $n) or die "pad $raw: $!\n";
+		$raw_pad -= $n;
+	}
+}
+close $raw_out or die "close $raw: $!\n";
+close $in or die "close $payload: $!\n";
+' "$U_BOOT_BIN" "$UEFI_MBN" "$UEFI_RAW" "$TEXT_BASE" "$MBN_PAYLOAD_ALIGN" \
 	"$FASTBOOT_FLASH_ALIGN" "$UEFI_PARTITION_SIZE"
 
 dtb_size=$(stat -c%s "$DTB_PATH")
 uboot_size=$(stat -c%s "$U_BOOT_BIN")
 boot_image_size=$(stat -c%s "$BOOT_IMAGE")
 uefi_mbn_size=$(stat -c%s "$UEFI_MBN")
+uefi_raw_size=$(stat -c%s "$UEFI_RAW")
 aligned_payload_size=$(( (uboot_size + MBN_PAYLOAD_ALIGN - 1) / MBN_PAYLOAD_ALIGN * MBN_PAYLOAD_ALIGN ))
 payload_pad=$(( aligned_payload_size - uboot_size ))
 mbn_body_size=$(( 40 + aligned_payload_size ))
 fastboot_pad=$(( uefi_mbn_size - mbn_body_size ))
+partition_pad=$(( uefi_raw_size - uefi_mbn_size ))
 boot_image_sha256=$(sha256sum "$BOOT_IMAGE" | cut -d' ' -f1)
 uefi_mbn_sha256=$(sha256sum "$UEFI_MBN" | cut -d' ' -f1)
+uefi_raw_sha256=$(sha256sum "$UEFI_RAW" | cut -d' ' -f1)
 
 printf '\n==> Wrote U-Boot artifacts\n'
 printf '    DTB:          %s (%s bytes)\n' "$DTB_PATH" "$dtb_size"
 printf '    U-Boot:       %s (%s bytes)\n' "$U_BOOT_BIN" "$uboot_size"
 printf '    boot image:   %s (%s bytes, sha256 %s)\n' "$BOOT_IMAGE" "$boot_image_size" "$boot_image_sha256"
 printf '    UEFI MBN:     %s (%s bytes, sha256 %s)\n' "$UEFI_MBN" "$uefi_mbn_size" "$uefi_mbn_sha256"
+printf '    UEFI raw:     %s (%s bytes, sha256 %s)\n' "$UEFI_RAW" "$uefi_raw_size" "$uefi_raw_sha256"
 printf '    MBN payload:  %s bytes aligned to %s bytes (%s pad bytes)\n' \
 	"$aligned_payload_size" "$MBN_PAYLOAD_ALIGN" "$payload_pad"
 printf '    flash pad:    %s bytes to %s-byte fastboot block alignment\n' \
 	"$fastboot_pad" "$FASTBOOT_FLASH_ALIGN"
+printf '    raw pad:      %s bytes to UEFI partition size %s\n' \
+	"$partition_pad" "$UEFI_PARTITION_SIZE"
 printf '    APPSBL load:  %s\n' "$TEXT_BASE"
 printf '    boot buffer:  %s\n' "$FASTBOOT_BUF_ADDR"
 printf '    uImage entry: %s\n' "$BOOT_IMAGE_LOAD_ADDR"
@@ -273,3 +306,7 @@ printf '  fastboot -s <fame-serial> boot %q\n' "$BOOT_IMAGE"
 printf '\nPersistent UEFI update from U-Boot fastboot, only after explicit approval:\n'
 printf '  fastboot -s <fame-serial> flash UEFI %q\n' "$UEFI_MBN"
 printf "  fastboot -s <fame-serial> oem 'run:reset'\n"
+
+printf '\nPersistent UEFI raw write from FlashApp/lp-externals, only after explicit approval:\n'
+printf '  lp-externals flash raw-write-partition --dry-run UEFI %q\n' "$UEFI_RAW"
+printf '  lp-externals flash raw-write-partition --confirm-raw-write UEFI %q\n' "$UEFI_RAW"

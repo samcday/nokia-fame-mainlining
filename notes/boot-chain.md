@@ -795,16 +795,19 @@ Current build helper:
 ./build-u-boot.sh
 ```
 
-By default this builds `nokia_fame_appsbl_pie_defconfig` with the Linux-built Fame DTB supplied through `EXT_DTB`. The same position-independent APPSBL U-Boot payload is packaged as a legacy U-Boot standalone image for volatile `fastboot boot` and as a 512-byte-aligned Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`. The helper does not boot, flash, or erase the device.
+By default this builds `nokia_fame_appsbl_pie_defconfig` with the Linux-built Fame DTB supplied through `EXT_DTB`. The same position-independent APPSBL U-Boot payload is packaged as a legacy U-Boot standalone image for volatile `fastboot boot`, as a 512-byte-aligned Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`, and as a partition-sized raw `UEFI` image for FlashApp/lp-externals raw writes. The helper does not boot, flash, or erase the device.
 
-Prepared artifacts from the consolidated APPSBL PIE build:
+Working artifacts from the current successful persistent APPSBL PIE build:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Fame DTB | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `5724` | `992d1ec61a4516f1aaa2fdbbfe8203c59c606dd200c4930e1773621dcd18bf16` |
-| PIE APPSBL U-Boot payload with external DTB | `out/fame/u-boot-build/u-boot-dtb.bin` | `345092` | `cf0dedd86d260b6c8e43c51758ca719a277dc9bcb32c7c502e2663cc227b1c1d` |
-| Legacy standalone image for `fastboot boot` | `out/fame/u-boot/u-boot-fame-fastboot.uimg` | `345156` | `f285e57f86551e50c923eac1ad50e60557e96994a3a93588b27254dc2fa379f2` |
-| Block-aligned appsbl MBN for `fastboot flash UEFI` | `out/fame/u-boot/u-boot-fame-uefi.mbn` | `345600` | `cef37aff215731429e39e1c6b32285622da514edd6187464bf70f208a8cefd53` |
+| Fame DTB | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `10593` | `4c23d8eee6a52ccf75353b66037749341ed4cc819a959a6735d8faac2bdab516` |
+| PIE APPSBL U-Boot payload with external DTB | `out/fame/u-boot-build/u-boot-dtb.bin` | `351097` | `bdce01d906c71c7eb3ce164111067b1f0e489b9cc799cd7a018505b73d1ace43` |
+| Legacy standalone image for `fastboot boot` | `out/fame/u-boot/u-boot-fame-fastboot.uimg` | `351161` | `6fe7d577d40b65e1bc8f069d07281e07e4870589a990cedcce334bb3a299f27d` |
+| Block-aligned appsbl MBN for `fastboot flash UEFI` | `out/fame/u-boot/u-boot-fame-uefi.mbn` | `351232` | `9a67d506d2a7a52d7ab276ac45fa2a4bd05d6ee5b15d712277f877ed78063706` |
+| Partition-sized raw `UEFI` image | `out/fame/u-boot/UEFI-u-boot-fame-uefi.bin` | `2560000` | `4b6be59603bb384e0587584d273665b701776c35800bfe9639b2814bfb3c0ce5` |
+
+`lp-externals flash raw-write-partition` writes whole GPT partitions and therefore requires an image exactly matching the live partition size. A live Fame GPT dump reported `UEFI first=45056 last=50055 sectors=5000`, which is `2560000` bytes at 512 bytes per sector, so the helper pads the MBN with zeroes and writes `out/fame/u-boot/UEFI-u-boot-fame-uefi.bin` for that path.
 
 The PIE APPSBL defconfig links U-Boot at `0x88f00000`, auto-runs `fastboot usb 0`, enables the block-backed eMMC fastboot backend, and includes the MSM8960 GCC provider for SDC1, USB HS1, and GSBI5 UART clocks. `CONFIG_SYS_BOOTM_LEN=0x04000000` gives U-Boot enough bootm copy/decompression room for the current Fame `Image.gz` payload. The current external DTB intentionally omits the untested `simple-framebuffer` reservation so U-Boot LMB can load the kernel at `0x80208000`. The current live Linux boot procedure explicitly sets `fdt_high=0xffffffff` and `initrd_high=0xffffffff` before `fastboot boot`, so U-Boot passes both the selected FDT and Android boot-image ramdisk in place instead of relocating them into unsafe or exhausted memory.
 
@@ -825,6 +828,13 @@ Persistent UEFI update from U-Boot fastboot, only after explicit approval:
 ```sh
 fastboot -s <fame-serial> flash UEFI out/fame/u-boot/u-boot-fame-uefi.mbn
 fastboot -s <fame-serial> oem 'run:reset'
+```
+
+Persistent UEFI raw write from FlashApp/lp-externals, only after explicit approval:
+
+```sh
+lp-externals flash raw-write-partition --dry-run UEFI out/fame/u-boot/UEFI-u-boot-fame-uefi.bin
+lp-externals flash raw-write-partition --confirm-raw-write UEFI out/fame/u-boot/UEFI-u-boot-fame-uefi.bin
 ```
 
 Earlier volatile PIE staging sequence from raw U-Boot fastboot:
@@ -890,3 +900,50 @@ tools/uart-stage0/send-payload.py --port /dev/ttyUSB0
 ```
 
 If LK starts from RAM, immediately use LK fastboot to flash a persistent rescue APPSBL before rebooting. Restoring stock `UEFI.bin` gets back to BootMgr/FlashApp; flashing the LK padded `UEFI` candidate keeps a fastboot recovery APPSBL for more raw U-Boot bring-up.
+
+## LK Rescue Restore, Raw APPSBL USB Regression, And Resolution
+
+Live recovery result: after returning from stock UEFI/FlashApp to raw APPSBL U-Boot, `U-Boot 2026.07-rc2-00038-ga842285fe134` reached UART and eMMC but failed cold USB fastboot setup:
+
+```text
+ULPI request timed out
+msm8916_usbphy msm8916_usbphy: PHY: Failed to power on msm8916_usbphy: 256.
+g_dnl_register: failed!, error: 256
+```
+
+UART RX/TX was available, so `tools/uart-stage0/send-payload.py` was used from the broken U-Boot prompt to boot the rebuilt Android4Lumia LK raw payload at `0x88f00000`. The rebuilt LK artifacts matched the previous known-good hashes:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| LK raw binary | `out/fame/android4lumia-lk-build/build-msm8960/lk.bin` | `452088` | `cc5f046131af696f0eef3e0794d06a4f9d28e396b337884e2d8f0c138a75d12d` |
+| LK Qualcomm appsbl-style MBN | `out/fame/android4lumia-lk-build/build-msm8960/EMMCBOOT.MBN` | `452128` | `3b1710d6b26cb47cc616ab761436c56ccd4418c75b8f58fcbdaa58caf7c10fe9` |
+| Padded LK `UEFI` rescue image | `out/fame/android4lumia-lk-build/UEFI-android4lumia-lk-msm8960.bin` | `2560000` | `f2778f084de34b5802a68c498249ec9e5f18fa5635ddf8eb249bd8e89e58da69` |
+
+LK entered USB fastboot and the padded LK image was flashed back to `UEFI` with scoped fastboot:
+
+```sh
+fastboot -s <fame-serial> flash UEFI out/fame/android4lumia-lk-build/UEFI-android4lumia-lk-msm8960.bin
+```
+
+After a hard power cycle, persistent `UEFI` booted LK fastboot again. Read-only verification reported `kernel: lk` and `product: MSM8960`.
+
+Non-persistent LK-chain U-Boot retests did not reproduce the ULPI failure. A dirty local U-Boot build with experimental MSM USB init-order changes and a clean detached `a842285fe13` build both booted through LK with `fastboot -s <fame-serial> boot ...`, then enumerated as U-Boot fastboot and reported `product: nokia-fame`. The clean detached artifact was:
+
+| Artifact | Path | Size | SHA-256 |
+| --- | --- | --- | --- |
+| Clean `a842285fe13` LK-chain U-Boot payload | `out/fame/u-boot-lk-fastboot-clean-build/u-boot-dtb.bin` | `339897` | `e8e41e0655f8244ca7bc5b54dd9c07ebbf0830c38b1cf0baba5b6751b7db3148` |
+| Clean `a842285fe13` LK-chain Android boot image | `out/fame/u-boot-lk-fastboot-clean/u-boot-fame-lk-fastboot-clean.img` | `344064` | `6b3fd8eef99b8e66d00aa526e8845d9d853713f202bdab07d90744ddb40e55d7` |
+
+Resolution: the latest dirty raw APPSBL U-Boot image was flashed to `UEFI` as the short MBN artifact and now cold-boots persistent U-Boot fastboot successfully. The working local U-Boot tree has two MSM USB init changes: the MSM8916-style USB PHY reset is run before the first ULPI writes, and the `qcom,ci-hdrc` wrapper deasserts reset controls after enabling clocks. Live read-only checks from the working persistent image reported:
+
+```text
+version-bootloader: U-Boot 2026.07-rc2-00038-ga842285fe134-dirty
+product: nokia-fame
+max-fetch-size: 0x04000000
+partition-size:UEFI: 0x0000000000271000
+partition-size:MainOS: 0x000000008d4a0000
+```
+
+`fastboot fetch UEFI /tmp/fame-UEFI-current-u-boot.bin` succeeded and produced a `2560000` byte temporary dump with SHA-256 `34b05029b50542c332cdc6226fb5c066541673a2a808db81273e254bb4a5c1a8`. The temporary dump was removed after verifying that its first `351232` bytes match `out/fame/u-boot/u-boot-fame-uefi.mbn`. The full partition hash is expected to differ from the zero-padded raw image when the short MBN is flashed, because the partition tail is not necessarily rewritten by the fastboot block flash path.
+
+Conclusion: raw APPSBL U-Boot is back in `UEFI` as the live persistent APPSBL. Keep the LK and UART stage0 rescue artifacts available, but the default kernel test path is again persistent U-Boot `fastboot boot`.
