@@ -178,6 +178,7 @@ MMCC MDP control/clock/reset registers (`linux/drivers/clk/qcom/mmcc-msm8960.c`)
 | mdp_axi_clk | en `0x0018` b23, hwcg b16 / halt `0x01d8` b8 | `:1972-1985` |
 | mdp_lut_clk | en `0x016c` b0 / halt `0x01e8` b13 | `:1364-1380` |
 | mdp_src (banked RCG) | ns `0x00d0`, md `0x00c4`/`0x00c8`, bank `0x00c0`; tbl has 200M & 266667M | `:1282-1333` |
+| pll2 / MM_PLL1 | mode `0x031c`, status `0x0334` b16 | `:50-52`; LK `clock.h:128-129` |
 | SW_RESET_AHB2 / ALL / AXI / AHB / CORE | `0x0200` / `0x0204` / `0x0208` / `0x020c` / `0x0210` | `:2856-2868`; LK clock.h:196-200 |
 | MPD_AXI_RESET (MDP AXI port) | `0x0208` b13 | `mmcc-msm8960.c:2858` ("MPD" typo); LK `clock.c:596-597` |
 | MDP_AHB_RESET / MDP_RESET | `0x020c` b3 / `0x0210` b21 | `:2895,2907`; LK `clock.c:656-657` |
@@ -259,18 +260,54 @@ NB: these HACK commits carry `Signed-off-by: Sam Day` (mirroring the earlier
 `Signed-off-by` to kernel commits. Flag for cleanup before any upstreamable
 patch; left as-is on the throwaway bring-up branch for now.
 
+## MDP4 Register Access CRACKED (2026-05-24, boot-21)
+
+The kernel MDP4 path now reads the version and comes fully up -- the U-Boot
+pivot above was overtaken by solving it directly in the kernel. The hang was
+two stacked problems:
+
+1. **Power:** SBL leaves the GFS enable bit set (`MDP_PD_CTL=0x31f`) but never
+   ramps power (no off->on transition, so the set ENABLE bit is a "fake on").
+   A real GFS cycle -- collapse `0x3f` -> enable `0x13f` -> unclamp `0x11f` --
+   with clocks running delivers power. Proven in U-Boot: without it a read of
+   `0x05100000` hangs; with it the slave responds.
+2. **Core clock:** `mdp_clk` at 200 and 266 MHz (both `P_PLL2` in
+   `clk_tbl_mdp`) hang the read identically; PLL2 (mmcc-internal, brought up
+   on demand) never locks on fame. Running `mdp_clk` from `P_PXO` (27 MHz) was
+   the fix. The reset bracket (assert/deassert CORE/AXI/AHB around enable) made
+   no observable difference -- it can be dropped.
+
+boot-21 (linux `8daf5173`, `mdp4_kms.c max_clk = 27000000`): `raw MDP4 version
+0x4030705` -> `MDP4 version v4.3`, `[drm] Initialized msm 1.13.0 ... minor 0`,
+`fb0` registered. Matches the working samsung-expressltexx VERSION exactly.
+
+Current state (kernel runs, no hang): scanout is unhappy --
+`[drm:mdp4_irq_error_handler] *ERROR* errors: 00000100` loops, `vblank time
+out, crtc=crtc-0`, and `fb0: sys_imageblit: framebuffer is not in virtual
+address space`. 27 MHz is a *diagnostic* core rate, far too slow to feed the
+480x800 pipeline (pixel clock ~28-52 MHz), so underflow (err 0x100) and absent
+vblank are the expected next problems -- not the MDP-access blocker.
+
+MDP4 HACK commit trail (linux branch `nokia-fame`, on top of the earlier
+diagnostics `09ede3fe`..`170d1f05`): `24ac55b0` add reset bracket (no-op),
+`86fdbb6f` try 200 MHz (still hung), `8daf5173` PXO 27 MHz (**works**).
+
 ## Next Work
 
-1. Implement MDP4 + DSI + Teisko in U-Boot: prove the MDP power-up (footswitch
-   GFS at MMCC `0x0190`) and the MDP/AHB/AXI/LUT clock sequence (try `mdp_clk`
-   at 200 MHz first, not 266), then read a stable `VERSION = 0x04030705` and
-   ideally paint a framebuffer. Use that as the reference sequence.
-2. Carry the proven sequence back to the kernel: most likely rework
-   `mmcc_msm8960_mdp_pd_*` so the GFS power-on runs with the MDP clocks
-   enabled and at a valid rate, then unwind the MDP4 HACK commits above.
-3. Re-test simple framebuffer only from a boot path that proves the display
-   buffer is live and does not overlap the ARM kernel load/decompression window.
+1. **Operating clock:** move `mdp_clk` off the 27 MHz PXO diagnostic rate onto a
+   `P_PLL8` rate (e.g. 128/96 MHz) high enough to feed scanout without
+   underflow (PLL8 is externally voted and known-good). Separately decide
+   whether to fix PLL2 lock in `mmcc-msm8960.c` (`pll2` clk_pll) or just keep
+   MDP on PLL8. Give `mdp4_kms_init` `max_clk` a real value (the TODO comment).
+2. **Scanout / DSI / panel:** chase `errors: 00000100` + `vblank time out` --
+   likely the Teisko panel/DSI video path isn't scanning out (panel reset GPIO
+   58, DSI video mode, Teisko init sequence); vblank needs the DSI link to
+   produce frames.
+3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
+   unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
+   `mdp4_kms.c`. Move it into `mmcc_msm8960_mdp_pd_power_on()` (force a real
+   cycle; make power_on actually run), drop the no-op reset bracket, and retire
+   the helper + diagnostic HACK commits. Note the `Signed-off-by` cleanup
+   (AGENTS.md:54) before anything upstreamable.
 4. Confirm panel reset GPIO 58 against stock-FFU `DSI_PANEL_RESET` (DSDT
-   resource 15) to reach Tier A.
-5. Translate PCFG timings and DSI values into a Linux panel description only
-   after reset/backlight/power sequencing is credible.
+   resource 15) to reach Tier A; translate PCFG timings into the Teisko panel.
