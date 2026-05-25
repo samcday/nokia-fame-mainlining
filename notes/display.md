@@ -170,10 +170,13 @@ The mainline `panel-nokia-teisko` driver therefore registers a raw DSI backlight
 with default brightness `0x80`. A 2026-05-25 boot of the first high-speed
 attempt timed out on the post-display-on `0x51` and `0x53` commands
 (`boot-26.log:351-356`), while the earlier low-power init commands completed.
+A follow-up boot confirmed that the prepare-window low-power brightness command
+works, but `drm_panel_enable()` then auto-enabled `panel->backlight` and retried
+the same command after display-on, timing out again (`boot-27.log:349-360`).
 The next mainline test keeps brightness in the same low-power prepare window as
-the working init sequence: one-byte DCS `0x51 <level>`, followed by DCS
-`0x53 0x24` to enable brightness control and the backlight bit, before
-display-on.
+the working init sequence and deliberately does not attach the raw backlight to
+`drm_panel.backlight`, so DRM will not issue an automatic post-display-on
+backlight update.
 
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
