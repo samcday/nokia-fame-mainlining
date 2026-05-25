@@ -847,7 +847,7 @@ This raw staging test does not write flash. When using an Android boot-image wra
 
 The staged PIE build that added I-cache-only startup and `qcom,pshold` sysreset support re-enumerated as U-Boot fastboot, bound `qcom_pshold` at `restart@800820`, and rebooted back to persistent U-Boot fastboot when `reset` was run through `fastboot oem 'run:reset'`.
 
-Current U-Boot enables PSHOLD reset without adding the standalone `qcom,pshold` node back to the Linux DTB. The `qcom_pshold` sysreset driver can register a fixed-address device from `CONFIG_SYSRESET_QCOM_PSHOLD_ADDRESS`, and the Fame defconfigs set it to the already documented PSHOLD register address `0x00800820`.
+Current U-Boot enables PSHOLD reset without adding the standalone `qcom,pshold` node back to the Linux DTB. U-Boot's `qcom_pshold` sysreset driver can bind to the same `qcom,msm8960-pinctrl` node and apply the documented `0x820` TLMM PS_HOLD offset. Linux does not put a default `ps_hold` pinctrl state on the TLMM provider itself: a 2026-05-25 test of that self-referential default state left downstream TLMM consumers such as DSI panel reset and SDCC1 pinctrl states stuck in deferred probe.
 
 A follow-up staged PIE D-cache test built `out/fame/u-boot-fame-appsbl-pie-dcache/u-boot-dtb.bin` from `nokia_fame_appsbl_pie_defconfig` with `CONFIG_SYS_DCACHE_OFF` unset and the ARM32 Snapdragon cache hook calling both `icache_enable()` and `dcache_enable()`. The staged payload was `344672` bytes, re-enumerated as `U-Boot 2026.07-rc2-00036-g40befb1f6543-dirty`, probed eMMC at 48 MHz 8-bit high-speed mode, fetched the currently flashed `UEFI` partition successfully, and rebooted back to persistent U-Boot fastboot through `qcom,pshold` reset.
 
