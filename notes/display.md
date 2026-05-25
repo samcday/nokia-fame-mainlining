@@ -608,6 +608,7 @@ The firmware happens to use PLL2, but we don't need to.
    | MDP4 global init: chip-select controller, port map, read config, fetch config, mixer reset | `drivers/gpu/drm/msm/disp/mdp4/mdp4_kms.c:20-77` |
    | MDP4 DSI timing register programming and DSI encoder enable | `drivers/gpu/drm/msm/disp/mdp4/mdp4_dsi_encoder.c:29-80,119-145` |
    | MDP4 DMA_P/overlay nofb setup and DSI interface selection | `drivers/gpu/drm/msm/disp/mdp4/mdp4_crtc.c:215-249,555-603` |
+   | MDP4 RGB pipe scanout register sequence and XRGB8888 unpack/format fields | `drivers/gpu/drm/msm/disp/mdp4/mdp4_plane.c:277-313`; `drivers/gpu/drm/msm/registers/display/mdp4.xml:286-341`; `drivers/gpu/drm/msm/disp/mdp_format.c:374-376` |
    | DSI v2 clock calculation, timing registers, controller reset, video control, and DMA packet path | `drivers/gpu/drm/msm/dsi/dsi_host.c:747-800,880-1013,1077-1244,1410-1459,2443-2450` |
    | MSM8227 28nm DSI PHY values: regulator/timing overrides, calibration, lanes, PLL recipe | `drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:78-101,126-159,204-249,531-659` |
 
@@ -640,6 +641,12 @@ The firmware happens to use PLL2, but we don't need to.
    | DSI command-DMA packet layout and trigger path | `drivers/gpu/drm/msm/dsi/dsi_host.c:1410-1459,2212-2249,2443-2450` |
    | DSI PLL lock wait: 1000 polls with 100 us between polls | `drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:71-85,172-207` |
    | MSM8960 TLMM GPIO register stride (`GPIO58` config at `0x008013a0`, in/out at `0x008013a4`) | `drivers/pinctrl/qcom/pinctrl-msm8960.c:380-405` |
+
+   The first U-Boot video-output probe intentionally programs RGB1 as a
+   white MDP4 solid-fill source instead of reading a framebuffer. This keeps
+   the experiment independent of MDP IOMMU/IOVA setup: if solid fill lights
+   the panel, add real RGB1 framebuffer scanout next; if it stays dark, chase
+   DSI/panel rails/backlight before spending time on IOMMU.
 
    Teisko DSI host/clock values derived from those lines:
 
