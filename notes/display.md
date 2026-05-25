@@ -201,11 +201,19 @@ brightness and control-display writes are reliable before display-on
 (`boot-32.log:376-391`), but post-display-on DSI brightness writes timed out
 (`boot-27.log:353-360`).
 
-The next WIP retry therefore keeps runtime fb blank out of panel sleep mode:
-blank turns the panel off with DSI brightness/control-display zero and
-display-off, but `unprepare()` skips DCS enter-sleep and returns success so the
-DRM panel state can unwind cleanly. Unblank restores brightness/control-display
-in the pre-display-on command window before sending display-on.
+The first WIP retry kept runtime fb blank out of panel sleep mode and restored
+brightness/control-display in `enable()` before sending display-on. `boot-43.log`
+proved that was too late for this panel/host ordering: after MDP4 asserted the
+DSI interface (`boot-43.log:387-388`), the added `enable()` brightness
+`0x51`/control-display `0x53` writes completed but produced DSI timeout/FIFO
+errors (`boot-43.log:389-403`) and the panel stayed dark.
+
+The next WIP retry therefore keeps the sleep-mode part of that experiment but
+moves DSI brightness/control-display back to `prepare()` only. Blank still turns
+the panel off with DSI brightness/control-display zero and display-off, while
+`unprepare()` skips DCS enter-sleep and returns success so the DRM panel state
+can unwind cleanly. Unblank should then run a full `prepare()` and restore
+brightness before MDP4 enables the DSI video path.
 
 ## MDP Vsync Clock Retry (2026-05-25)
 
