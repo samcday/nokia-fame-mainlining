@@ -9,6 +9,7 @@ Initial candidates:
 | `download-ffu.sh` | Wrapper around `lp-externals lumiadb download --model RM-914 --product-code 059S083`. |
 | `extract-ffu.sh` | Extract GPT, ESP, selected boot partitions, and ACPI candidates from a stock FFU. |
 | `build-dev-initrd.sh` | Tiny BusyBox/configfs CDC-ACM initramfs once kernel UDC is in scope. |
+| `add-worktree.sh` | Create a new worktree with all submodules set up. Detects submodules that are themselves worktrees (linux, u-boot) and creates sibling worktrees from the canonical repos. Regular submodules are initialized via `git submodule update --init`. |
 
 Top-level helpers currently live at repository root when they are the primary bring-up entry point:
 
