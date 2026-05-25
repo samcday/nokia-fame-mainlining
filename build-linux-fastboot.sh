@@ -24,10 +24,11 @@ Builds ./linux and creates an Android boot.img intended for persistent U-Boot:
 
   fastboot boot out/fame/fame-linux-fastboot.img
 
-The kernel payload is gzip-compressed ARM Image. U-Boot decompresses it to the
-kernel load address, avoiding the ARM zImage self-decompressor path. The Fame
-DTB is stored in the Android boot-image v2 DTB area so U-Boot can pass it as a
-normal bootloader-provided FDT.
+The kernel payload defaults to uncompressed ARM Image for fast boot (U-Boot
+skips decompression). Set GZIP=1 to gzip-compress the kernel instead, trading
+boot speed for a smaller image. The Fame DTB is stored in the Android
+boot-image v2 DTB area so U-Boot can pass it as a normal bootloader-provided
+FDT.
 
 Environment overrides:
 
@@ -43,6 +44,7 @@ Environment overrides:
   LLVM               LLVM suffix/prefix for kernel builds, if not using CROSS_COMPILE
   JOBS               make -j value (default: nproc)
   SKIP_BUILD=1       Reuse existing kernel artifacts in BUILD_DIR
+  GZIP=1             Gzip-compress the kernel before passing to mkbootimg
 
 Boot image layout defaults follow the Fame Android/pmaports base while keeping
 FDT and ramdisk above the first 128 MiB of RAM, away from decompressor output
@@ -149,13 +151,18 @@ fi
 
 RAW_IMAGE="$BUILD_DIR/arch/arm/boot/Image"
 DTB_PATH="$BUILD_DIR/arch/arm/boot/dts/qcom/$DTB"
-KERNEL_IMAGE="$OUT_DIR/Image.gz"
+GZIP=${GZIP:-0}
 
 [[ -f "$RAW_IMAGE" ]] || die "missing Image: $RAW_IMAGE"
 [[ -f "$DTB_PATH" ]] || die "missing DTB: $DTB_PATH"
 
-gzip -n -c "$RAW_IMAGE" > "$KERNEL_IMAGE"
-chmod 0644 "$KERNEL_IMAGE"
+if [[ "$GZIP" = 1 ]]; then
+	KERNEL_IMAGE="$OUT_DIR/Image.gz"
+	gzip -n -c "$RAW_IMAGE" > "$KERNEL_IMAGE"
+	chmod 0644 "$KERNEL_IMAGE"
+else
+	KERNEL_IMAGE="$RAW_IMAGE"
+fi
 
 printf '==> Creating Android boot image\n'
 mkbootimg \
