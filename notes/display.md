@@ -565,19 +565,90 @@ The firmware happens to use PLL2, but we don't need to.
 
 ## Next Work
 
-1. **Operating clock (SETTLED -- PLL8):** boot-23 confirms `max_clk=128000000`
-   (PLL8, commit `3e69030c`) works end-to-end to userspace, and the boot-21
-   `0x100`/vblank errors are GONE (they were the too-slow 27 MHz PXO rate). Keep
-   PLL8; do NOT chase PLL2 -- its kernel "missing config" is moot (SBL sets L/M/N
-   in HW) and the boot-20 PLL2 hang was cold settle-timing, not config. PLL2 only
-   matters if gfx3d/csi are wanted later (a settle fix, not a config one). Device
-   gotcha for any boot: `fdt_high=0xffffffff; initrd_high=0xffffffff` in U-Boot
-   env before `fastboot boot`, or bootm wedges ("ramdisk - allocation error", no
-   software reset).
+1. **Operating clock (UPDATED -- PLL2):** linux commit `0ad8582659ad`
+   supersedes the temporary PLL8 conclusion. PLL2/MM_PLL1 is valid on fame, but
+   its ready indication is status bit0 rather than bit16, and it must be enabled
+   by writing `BYPASSNL|RESET_N` together after a clean disable. Exact references:
+   `linux/drivers/clk/qcom/clk-pll.c:344-398` (`clk_pll2_enable()` recipe),
+   `linux/drivers/clk/qcom/mmcc-msm8960.c:45-60` (PLL2 regs/status bit0),
+   `:1288-1342` (`clk_tbl_mdp`/`mdp_src`, including the 200 MHz PLL2 row), and
+   `linux/drivers/gpu/drm/msm/disp/mdp4/mdp4_kms.c:529-530` (kernel max_clk
+   back to 200 MHz). Device gotcha for any boot:
+   `fdt_high=0xffffffff; initrd_high=0xffffffff` in U-Boot env before
+   `fastboot boot`, or bootm wedges ("ramdisk - allocation error", no software
+   reset).
+
+   U-Boot MMCC implementation breadcrumb (2026-05-25): the first U-Boot chunk
+   mirrored only the MDP clock/reset/power facts in the register table above:
+   `linux/drivers/clk/qcom/mmcc-msm8960.c:1282-1333` (`clk_tbl_mdp`/`mdp_src`),
+   `:1346-1380` (`mdp_clk`/`mdp_lut_clk`), `:1972-1985` (`mdp_axi_clk`),
+   `:2639-2650` (`mdp_ahb_clk`), `:3037-3096` (MDP reset map), and
+   `:3120-3125` (`MDP_PD_CTL_REG` bits). Follow-up U-Boot work now programs
+   `MDP_SRC` from PLL2 at 200 MHz while keeping the 128 MHz PLL8 row as a
+   fallback for explicit lower-rate requests.
 2. **Scanout / DSI / panel:** chase `errors: 00000100` + `vblank time out` --
    likely the Teisko panel/DSI video path isn't scanning out (panel reset GPIO
    58, DSI video mode, Teisko init sequence); vblank needs the DSI link to
    produce frames.
+
+   Kernel working reference (2026-05-25): Linux commit
+   `1f026b5057503ff364f1c7f62b483e673318f3e2` lights the MDP4 + Teisko panel
+   when booted from raw APPSBL U-Boot. Treat this as the current best live
+   source of truth for U-Boot display programming:
+
+   | Fact | Source lines at `1f026b505750` |
+   | --- | --- |
+   | Teisko reset pulse: GPIO logical deassert/assert/deassert, delays 2/2/20 ms | `drivers/gpu/drm/panel/panel-nokia-teisko.c:43-55` |
+   | Panel prepare/init commands: DCS sleep out, `ff 78`, address mode `00`, control display `24`, brightness `80` | `drivers/gpu/drm/panel/panel-nokia-teisko.c:138-195` |
+   | Panel enable: DCS display on then 20 ms delay | `drivers/gpu/drm/panel/panel-nokia-teisko.c:198-218` |
+   | Teisko mode: 480x800, pixel clock 28654 kHz, htotal 573, vtotal 829 | `drivers/gpu/drm/panel/panel-nokia-teisko.c:260-280` |
+   | DSI link: 2 lanes, RGB888, video mode, non-continuous clock | `drivers/gpu/drm/panel/panel-nokia-teisko.c:326-329` |
+   | Fame panel DT: reset GPIO 58 active-low, data lanes `<1 2>`, DSI supplies, PHY supply | `arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:153-194` |
+   | MSM8227 DSI0/MMCC/MDP DT: DSI controller, 28nm PHY, MDP clock list including `MDP_VSYNC_CLK` | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:238-349` |
+   | MDP4 global init: chip-select controller, port map, read config, fetch config, mixer reset | `drivers/gpu/drm/msm/disp/mdp4/mdp4_kms.c:20-77` |
+   | MDP4 DSI timing register programming and DSI encoder enable | `drivers/gpu/drm/msm/disp/mdp4/mdp4_dsi_encoder.c:29-80,119-145` |
+   | MDP4 DMA_P/overlay nofb setup and DSI interface selection | `drivers/gpu/drm/msm/disp/mdp4/mdp4_crtc.c:215-249,555-603` |
+   | DSI v2 clock calculation, timing registers, controller reset, video control, and DMA packet path | `drivers/gpu/drm/msm/dsi/dsi_host.c:747-800,880-1013,1077-1244,1410-1459,2443-2450` |
+   | MSM8227 28nm DSI PHY values: regulator/timing overrides, calibration, lanes, PLL recipe | `drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:78-101,126-159,204-249,531-659` |
+
+   For the Teisko mode, the MDP4 DSI timing equations in
+   `mdp4_dsi_encoder.c:51-57` produce:
+
+   | Register field | Value |
+   | --- | --- |
+   | hsync pulse | `4` |
+   | hsync period | `573` |
+   | hsync start/end X | `48` / `527` |
+   | vsync period | `475017` (`829 * 573`) |
+   | vsync len | `573` |
+   | display V start/end | `8595` / `466994` |
+   | control polarity | `0` |
+
+   U-Boot DSI diagnostic breadcrumb (2026-05-25): direct `fame_mdp panel`
+   programming mirrors the same working kernel path and intentionally stops at
+   a bring-up diagnostic, not a reusable driver:
+
+   | Fact | Source lines at `1f026b505750` |
+   | --- | --- |
+   | DSI0 host/PHY/MMCC register bases: host `0x04700000`, PLL `0x04700200`, PHY `0x04700300`, PHY regulator `0x04700500` | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:238-313` |
+   | DSI host clocks and assigned PLL parents (`DSI_M_AHB`, `DSI_S_AHB`, `AMP_AHB`, `DSI_CLK`, byte/pixel/esc) | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:248-269`; `drivers/clk/qcom/mmcc-msm8960.c:2047-2437` |
+   | DSI reset IDs and MMCC reset bits | `include/dt-bindings/reset/qcom,mmcc-msm8960.h:45,61,74`; `drivers/clk/qcom/mmcc-msm8960.c:2892-2921` |
+   | TLMM base and GPIO58 active-low reset | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:125-133`; `arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:93-100,171-177` |
+   | DSI controller timing/control register equations | `drivers/gpu/drm/msm/dsi/dsi_host.c:880-1013,1077-1214` |
+   | DSI command-DMA packet layout and trigger path | `drivers/gpu/drm/msm/dsi/dsi_host.c:1410-1459,2212-2249,2443-2450` |
+   | MSM8960 TLMM GPIO register stride (`GPIO58` config at `0x008013a0`, in/out at `0x008013a4`) | `drivers/pinctrl/qcom/pinctrl-msm8960.c:380-405` |
+
+   Teisko DSI host/clock values derived from those lines:
+
+   | Field | Value |
+   | --- | --- |
+   | Pixel / byte / esc / DSI source clocks | `28654000` / `42981000` / `14327000` / `85962000` Hz |
+   | DSI PLL VCO target | `687696000` Hz (`byte * 16`) |
+   | DSI PLL postdivs | byte divider `16` (`CTRL_9=0x0f`), DSI divider `8` (`CTRL_10=0x07`), bit divider `2` (`CTRL_8=0x71`) |
+   | DSI host video timing | `ACTIVE_H=0x02100030`, `ACTIVE_V=0x032f000f`, `TOTAL=0x033c023c`, `ACTIVE_HSYNC=0x00040000`, `ACTIVE_VSYNC_VPOS=0x00010000` |
+   | DSI host control | `VID_CFG0=0x00009130`, `TRIG_CTRL=0x00000004`, `CLKOUT_TIMING_CTRL=0x00000318`, `CLK_CTRL=0x0000023f`, command base control `0x00000131`, video control `0x00000133` |
+   | Panel reset physical pulse | GPIO58 high, 2 ms; low, 2 ms; high, 20 ms (logical deassert/assert/deassert for an active-low reset GPIO) |
+
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
    unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
    `mdp4_kms.c`. Move it into `mmcc_msm8960_mdp_pd_power_on()` (force a real
