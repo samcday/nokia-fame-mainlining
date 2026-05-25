@@ -636,6 +636,7 @@ The firmware happens to use PLL2, but we don't need to.
    | TLMM base and GPIO58 active-low reset | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:125-133`; `arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:93-100,171-177` |
    | DSI controller timing/control register equations | `drivers/gpu/drm/msm/dsi/dsi_host.c:880-1013,1077-1214` |
    | DSI command-DMA packet layout and trigger path | `drivers/gpu/drm/msm/dsi/dsi_host.c:1410-1459,2212-2249,2443-2450` |
+   | DSI PLL lock wait: 1000 polls with 100 us between polls | `drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:71-85,172-207` |
    | MSM8960 TLMM GPIO register stride (`GPIO58` config at `0x008013a0`, in/out at `0x008013a4`) | `drivers/pinctrl/qcom/pinctrl-msm8960.c:380-405` |
 
    Teisko DSI host/clock values derived from those lines:
