@@ -159,14 +159,21 @@ The Teisko on-sequence sends exit sleep, `0xff 0x78`, address mode `0x36 0x00`,
 control display `0x53 0x24`, and display on at
 `community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise.c:1014-1038`.
 The downstream backlight callback updates byte 1 of `write_display_brightness`,
-switches TX power mode to high-speed, sends the brightness command, then returns
-to low-power mode at
+waits for video done, clears `DSI_CMD_DMA_CTRL_LOW_POWER`, sends the brightness
+command, then sets `DSI_CMD_DMA_CTRL_LOW_POWER` again at
 `community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise.c:1176-1205`.
+The downstream `mipi_set_tx_power_mode()` implementation maps mode `0` to
+clearing bit 26 of `DSI_COMMAND_MODE_DMA_CTRL` and mode `1` to setting it at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_dsi_host.c:962-971`.
 
 The mainline `panel-nokia-teisko` driver therefore registers a raw DSI backlight
-with default brightness `0x80`, sends one-byte DCS `0x51 <level>` in high-speed
-mode after display-on, and follows it with DCS `0x53 0x24` to enable brightness
-control and the backlight bit.
+with default brightness `0x80`. A 2026-05-25 boot of the first high-speed
+attempt timed out on the post-display-on `0x51` and `0x53` commands
+(`boot-26.log:351-356`), while the earlier low-power init commands completed.
+The next mainline test keeps brightness in the same low-power prepare window as
+the working init sequence: one-byte DCS `0x51 <level>`, followed by DCS
+`0x53 0x24` to enable brightness control and the backlight bit, before
+display-on.
 
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
