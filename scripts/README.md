@@ -14,4 +14,4 @@ Top-level helpers currently live at repository root when they are the primary br
 
 | Script | Purpose |
 | --- | --- |
-| `build-u-boot.sh` | Builds the canonical Linux DTB, PIE APPSBL U-Boot, a non-flashing legacy standalone `fastboot boot` image, a block-aligned MBN for `fastboot flash UEFI`, and a partition-sized FlashApp raw `UEFI` image. |
+| `build-u-boot.sh` | Builds the canonical Linux DTB, PIE APPSBL U-Boot, a non-flashing Android `fastboot boot` image, a block-aligned MBN for `fastboot flash UEFI`, and a partition-sized FlashApp raw `UEFI` image. |

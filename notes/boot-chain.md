@@ -533,7 +533,7 @@ Build helper:
 ./build-u-boot.sh DEFCONFIG=nokia_fame_defconfig
 ```
 
-The current consolidated helper builds `make -C linux ... dtbs`, builds U-Boot with `EXT_DTB=<linux-built Fame DTB>`, emits a Qualcomm appsbl-style MBN header, and also emits a legacy standalone image for volatile `fastboot boot`. It does not boot, flash, or erase the device.
+The current consolidated helper builds `make -C linux ... dtbs`, builds U-Boot with `EXT_DTB=<linux-built Fame DTB>`, emits a Qualcomm appsbl-style MBN header, and also emits an Android boot image for volatile `fastboot boot`. It does not boot, flash, or erase the device.
 
 Prepared artifacts from the adjusted APPSBL-addressed build, not written to the device by the assistant:
 
@@ -795,33 +795,32 @@ Current build helper:
 ./build-u-boot.sh
 ```
 
-By default this builds `nokia_fame_appsbl_pie_defconfig` with the Linux-built Fame DTB supplied through `EXT_DTB`. The same position-independent APPSBL U-Boot payload is packaged as a legacy U-Boot standalone image for volatile `fastboot boot`, as a 512-byte-aligned Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`, and as a partition-sized raw `UEFI` image for FlashApp/lp-externals raw writes. The helper does not boot, flash, or erase the device.
+By default this builds `nokia_fame_appsbl_pie_defconfig` with the Linux-built Fame DTB supplied through `EXT_DTB`. The same position-independent APPSBL U-Boot payload is packaged as an Android boot image for volatile `fastboot boot`, as a 512-byte-aligned Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`, and as a partition-sized raw `UEFI` image for FlashApp/lp-externals raw writes. The helper does not boot, flash, or erase the device.
 
-Working artifacts from the current successful persistent APPSBL PIE build:
+Current build-helper artifacts from the latest packaging verification:
 
 | Artifact | Path | Size | SHA-256 |
 | --- | --- | --- | --- |
 | Fame DTB | `out/fame/linux-build/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dtb` | `10593` | `4c23d8eee6a52ccf75353b66037749341ed4cc819a959a6735d8faac2bdab516` |
-| PIE APPSBL U-Boot payload with external DTB | `out/fame/u-boot-build/u-boot-dtb.bin` | `351097` | `bdce01d906c71c7eb3ce164111067b1f0e489b9cc799cd7a018505b73d1ace43` |
-| Legacy standalone image for `fastboot boot` | `out/fame/u-boot/u-boot-fame-fastboot.uimg` | `351161` | `6fe7d577d40b65e1bc8f069d07281e07e4870589a990cedcce334bb3a299f27d` |
-| Block-aligned appsbl MBN for `fastboot flash UEFI` | `out/fame/u-boot/u-boot-fame-uefi.mbn` | `351232` | `9a67d506d2a7a52d7ab276ac45fa2a4bd05d6ee5b15d712277f877ed78063706` |
-| Partition-sized raw `UEFI` image | `out/fame/u-boot/UEFI-u-boot-fame-uefi.bin` | `2560000` | `4b6be59603bb384e0587584d273665b701776c35800bfe9639b2814bfb3c0ce5` |
+| PIE APPSBL U-Boot payload with external DTB | `out/fame/u-boot-build/u-boot-dtb.bin` | `357457` | `3bfbfa44ec6e2ff6380b17ee4d53bf7ac7fd920d13bfdca6d9937924ca2e35e5` |
+| Android boot image for volatile `fastboot boot` | `out/fame/u-boot/u-boot-fame-fastboot.img` | `364544` | `a22c4c582a2c093b015cacf75f4af4ccb661ad58c5dcbb59b84a8ef09137641f` |
+| Block-aligned appsbl MBN for `fastboot flash UEFI` | `out/fame/u-boot/u-boot-fame-uefi.mbn` | `357888` | `5959b467d64877c79c6237c20e9d1d43c7a501dfb4a96dc4f6fc3a54e0ff5269` |
+| Partition-sized raw `UEFI` image | `out/fame/u-boot/UEFI-u-boot-fame-uefi.bin` | `2560000` | `48141c47e3cc6fe1666df4f85d2351f08c8d04ab2c035d5af9c1670fbaf73b31` |
 
 `lp-externals flash raw-write-partition` writes whole GPT partitions and therefore requires an image exactly matching the live partition size. A live Fame GPT dump reported `UEFI first=45056 last=50055 sectors=5000`, which is `2560000` bytes at 512 bytes per sector, so the helper pads the MBN with zeroes and writes `out/fame/u-boot/UEFI-u-boot-fame-uefi.bin` for that path.
 
 The PIE APPSBL defconfig links U-Boot at `0x88f00000`, auto-runs `fastboot usb 0`, enables the block-backed eMMC fastboot backend, and includes the MSM8960 GCC provider for SDC1, USB HS1, and GSBI5 UART clocks. `CONFIG_SYS_BOOTM_LEN=0x04000000` gives U-Boot enough bootm copy/decompression room for the current Fame `Image.gz` payload. The current external DTB intentionally omits the untested `simple-framebuffer` reservation so U-Boot LMB can load the kernel at `0x80208000`. The current live Linux boot procedure explicitly sets `fdt_high=0xffffffff` and `initrd_high=0xffffffff` before `fastboot boot`, so U-Boot passes both the selected FDT and Android boot-image ramdisk in place instead of relocating them into unsafe or exhausted memory.
 
-The volatile U-Boot image is not an Android boot image. It is a legacy `ARM U-Boot Standalone Program` with load and entry address `0x82000040`, so persistent U-Boot's default `fastboot boot` path can execute it through `bootm` directly. The extra `0x40` skips the legacy image header in the fastboot download buffer and avoids the previous accidental Android/Linux FDT handoff path. Set `autostart=yes` before this volatile test so standalone `bootm` payloads execute instead of only setting `filesize` and returning.
+The volatile U-Boot image is an Android boot image with raw `u-boot-dtb.bin` as its kernel payload. Its header loads the payload at `0x82001000`; `CONFIG_POSITION_INDEPENDENT=y` lets the APPSBL U-Boot binary run there even though it links at `0x88f00000`. Persistent U-Boot must set the `abootimg` address, stop after Android `bootm loados`, and jump to that payload entry instead of continuing into the normal Linux handoff.
 
 Volatile non-flashing test from persistent U-Boot fastboot:
 
 ```sh
-fastboot -s <fame-serial> oem 'run:setenv autostart yes'
-fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd'
-fastboot -s <fame-serial> boot out/fame/u-boot/u-boot-fame-fastboot.uimg
+fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd abootimg addr 0x82000000\; bootm start 0x82000000\; bootm loados\; go 0x82001000'
+fastboot -s <fame-serial> boot out/fame/u-boot/u-boot-fame-fastboot.img
 ```
 
-A stale in-RAM `fastboot_bootcmd` can override U-Boot's default `fastboot boot` handling, so unset it before testing the legacy standalone image. A previous Android-wrapper attempt without the override fell into U-Boot's Linux `bootm` path and failed with `FDT and ATAGS support not compiled in`.
+The escaped semicolons are intentional: they store the multi-command `fastboot_bootcmd` without executing `bootm loados` or `go` during `setenv`. `abootimg addr` is required for currently flashed images because this U-Boot build has `CONFIG_CMD_ABOOTIMG`; without it, the Android boot helper ignores the `bootm start` address and tries to parse the default `$loadaddr` instead. The U-Boot fastboot source now also sets the abootimg address before custom `fastboot_bootcmd`, but the explicit command keeps this procedure working with older persistent images. Without the override as a whole, persistent U-Boot treats the downloaded Android boot image as a Linux image and can fail in the FDT/ATAGS handoff path instead of entering the nested U-Boot payload.
 
 Persistent UEFI update from U-Boot fastboot, only after explicit approval:
 

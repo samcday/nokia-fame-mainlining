@@ -44,14 +44,14 @@ initrd_high=0xffffffff
 
 The generic Snapdragon `board_late_init()` allocates large LMB-backed runtime buffers (`loadaddr`, `kernel_addr_r`, `ramdisk_addr_r`, `kernel_comp_addr_r`, `fastboot_addr_r`, and others). On this 512 MiB device split into `0x80200000..0x88dfffff` and `0x90000000..0x9fffffff`, those reservations can starve boot-time FDT relocation and push the FDT into unsafe low memory. A Fame-specific address policy or smaller reservations would be cleaner.
 
-The volatile U-Boot test image should remain separate from Linux kernel testing. If testing U-Boot without flashing, prefer raw staging:
+The volatile U-Boot test image should remain separate from Linux kernel testing. The build helper emits an Android boot image with raw PIE `u-boot-dtb.bin` as its kernel payload:
 
 ```sh
-fastboot -s 7cda982 stage out/fame/u-boot-build/u-boot-dtb.bin
-fastboot -s 7cda982 oem 'run:go 0x82000000'
+fastboot -s 7cda982 oem 'run:setenv fastboot_bootcmd abootimg addr 0x82000000\; bootm start 0x82000000\; bootm loados\; go 0x82001000'
+fastboot -s 7cda982 boot out/fame/u-boot/u-boot-fame-fastboot.img
 ```
 
-Do not use stale Android-wrapped U-Boot images for this path; they fall into U-Boot's Linux `bootm` path unless `fastboot_bootcmd` is set exactly right.
+The `go` address is the Android boot-image kernel load address, not the APPSBL link address. `abootimg addr` keeps the procedure compatible with currently flashed images by making `bootm start` and `bootm loados` parse the downloaded image at the fastboot buffer rather than the default `$loadaddr`; newer U-Boot sources also set this before running custom `fastboot_bootcmd`. `CONFIG_POSITION_INDEPENDENT=y` lets the nested U-Boot start at `0x82001000` while the persistent APPSBL image remains linked for `0x88f00000`.
 
 ## Memory Facts
 

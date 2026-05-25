@@ -77,7 +77,7 @@ FFU  = RM914_3058.50000.1425.0001_RETAIL_eu_euro2_218_01_452872_prd_signed.ffu
 | `STATUS.md` | Current implementation state and next work. |
 | `build-linux-fastboot.sh` | Builds Linux, mini-initrd, and a non-flashing Android boot image for persistent U-Boot `fastboot boot`. |
 | `build-minitrd.sh` | Builds the mkosi/APK BusyBox mini-initrd used for UART and CDC-ACM gadget shell tests. |
-| `build-u-boot.sh` | Builds the Linux DTB, PIE APPSBL U-Boot, a non-flashing legacy standalone `fastboot boot` image, a `fastboot flash UEFI` MBN, and a FlashApp raw `UEFI` image. |
+| `build-u-boot.sh` | Builds the Linux DTB, PIE APPSBL U-Boot, a non-flashing Android `fastboot boot` image, a `fastboot flash UEFI` MBN, and a FlashApp raw `UEFI` image. |
 | `notes/source-trust.md` | Trust model for FFU/live/community/adjacent facts. |
 | `notes/prior-art-index.md` | Submodule inventory and key source paths. |
 | `notes/bootmgr-protocol.md` | Read-only BootMgr/Lumia USB protocol notes. |

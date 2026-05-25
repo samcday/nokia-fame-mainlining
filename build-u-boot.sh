@@ -23,7 +23,7 @@ Usage: ./build-u-boot.sh [KEY=value ...]
 Builds the canonical Fame DTB, builds position-independent APPSBL U-Boot, then
 packages the same u-boot-dtb.bin as:
 
-  1. a legacy U-Boot standalone image for non-flashing `fastboot boot`
+  1. an Android boot image for non-flashing `fastboot boot`
   2. a Qualcomm appsbl-style MBN for persistent `fastboot flash UEFI`
   3. a full UEFI partition image for FlashApp/lp-externals raw writes
 
@@ -41,8 +41,11 @@ Environment overrides:
   JOBS                  make -j value (default: nproc)
   TEXT_BASE             APPSBL MBN load address (default: 0x88F00000)
   FASTBOOT_BUF_ADDR     Runtime fastboot download buffer (default: 0x82000000)
-  BOOT_IMAGE_LOAD_ADDR  Legacy image load/entry address (default: FASTBOOT_BUF_ADDR + 0x40)
-  BOOT_IMAGE_NAME       `fastboot boot` image (default: u-boot-fame-fastboot.uimg)
+  BOOT_IMAGE_BASE       Android boot image base (default: FASTBOOT_BUF_ADDR)
+  BOOT_IMAGE_KERNEL_OFFSET Android kernel offset / U-Boot entry offset (default: 0x00001000)
+  BOOT_IMAGE_PAGESIZE   Android boot image page size (default: 4096)
+  BOOT_IMAGE_HEADER_VERSION Android boot image header version (default: 0)
+  BOOT_IMAGE_NAME       `fastboot boot` image (default: u-boot-fame-fastboot.img)
   UEFI_MBN_NAME         `fastboot flash UEFI` MBN (default: u-boot-fame-uefi.mbn)
   UEFI_RAW_NAME         Raw UEFI partition image (default: UEFI-u-boot-fame-uefi.bin)
   MBN_PAYLOAD_ALIGN     Payload alignment in the APPSBL header (default: 8)
@@ -80,8 +83,11 @@ LINUX_DT_TARGET=${LINUX_DT_TARGET:-dtbs}
 JOBS=${JOBS:-$(nproc)}
 TEXT_BASE=${TEXT_BASE:-0x88F00000}
 FASTBOOT_BUF_ADDR=${FASTBOOT_BUF_ADDR:-0x82000000}
-BOOT_IMAGE_LOAD_ADDR=${BOOT_IMAGE_LOAD_ADDR:-$(printf '0x%08x' $((FASTBOOT_BUF_ADDR + 0x40)))}
-BOOT_IMAGE_NAME=${BOOT_IMAGE_NAME:-u-boot-fame-fastboot.uimg}
+BOOT_IMAGE_BASE=${BOOT_IMAGE_BASE:-$FASTBOOT_BUF_ADDR}
+BOOT_IMAGE_KERNEL_OFFSET=${BOOT_IMAGE_KERNEL_OFFSET:-0x00001000}
+BOOT_IMAGE_PAGESIZE=${BOOT_IMAGE_PAGESIZE:-4096}
+BOOT_IMAGE_HEADER_VERSION=${BOOT_IMAGE_HEADER_VERSION:-0}
+BOOT_IMAGE_NAME=${BOOT_IMAGE_NAME:-u-boot-fame-fastboot.img}
 UEFI_MBN_NAME=${UEFI_MBN_NAME:-u-boot-fame-uefi.mbn}
 UEFI_RAW_NAME=${UEFI_RAW_NAME:-UEFI-u-boot-fame-uefi.bin}
 MBN_PAYLOAD_ALIGN=${MBN_PAYLOAD_ALIGN:-8}
@@ -104,6 +110,7 @@ UEFI_RAW="$OUT_DIR/$UEFI_RAW_NAME"
 
 need make
 need perl
+need mkbootimg
 need sha256sum
 need stat
 
@@ -126,9 +133,11 @@ else
 fi
 
 [[ "$TOOLCHAIN_DESC" != none ]] || die 'no ARM GCC cross compiler found; set CROSS_COMPILE='
+[[ $((BOOT_IMAGE_PAGESIZE)) -gt 0 ]] || die "BOOT_IMAGE_PAGESIZE must be greater than zero"
 [[ $((MBN_PAYLOAD_ALIGN)) -gt 0 ]] || die "MBN_PAYLOAD_ALIGN must be greater than zero"
 [[ $((FASTBOOT_FLASH_ALIGN)) -gt 0 ]] || die "FASTBOOT_FLASH_ALIGN must be greater than zero"
 [[ $((UEFI_PARTITION_SIZE)) -gt 0 ]] || die "UEFI_PARTITION_SIZE must be greater than zero"
+BOOT_IMAGE_ENTRY_ADDR=$(printf '0x%08x' $((BOOT_IMAGE_BASE + BOOT_IMAGE_KERNEL_OFFSET)))
 
 mkdir -p "$OUT_DIR" "$LINUX_BUILD_DIR" "$U_BOOT_BUILD_DIR"
 
@@ -158,16 +167,6 @@ fi
 [[ -f "$U_BOOT_BIN" ]] || die "missing U-Boot payload: $U_BOOT_BIN"
 [[ -f "$U_BOOT_BUILD_DIR/.config" ]] || die "missing U-Boot config: $U_BOOT_BUILD_DIR/.config"
 
-if [[ -n "${MKIMAGE:-}" ]]; then
-	[[ -x "$MKIMAGE" ]] || die "mkimage not executable: $MKIMAGE"
-elif [[ -x "$U_BOOT_BUILD_DIR/tools/mkimage" ]]; then
-	MKIMAGE="$U_BOOT_BUILD_DIR/tools/mkimage"
-elif have mkimage; then
-	MKIMAGE=mkimage
-else
-	die "missing required tool: mkimage"
-fi
-
 config_text_base=
 while IFS='=' read -r key value; do
 	if [[ "$key" == CONFIG_TEXT_BASE ]]; then
@@ -179,17 +178,15 @@ done < "$U_BOOT_BUILD_DIR/.config"
 [[ $((TEXT_BASE)) -eq $((config_text_base)) ]] || \
 	die "TEXT_BASE=$TEXT_BASE does not match U-Boot CONFIG_TEXT_BASE=$config_text_base"
 
-printf '==> Packaging legacy U-Boot standalone image\n'
-"$MKIMAGE" \
-	-A arm \
-	-O u-boot \
-	-T standalone \
-	-C none \
-	-a "$BOOT_IMAGE_LOAD_ADDR" \
-	-e "$BOOT_IMAGE_LOAD_ADDR" \
-	-n nokia-fame-u-boot \
-	-d "$U_BOOT_BIN" \
-	"$BOOT_IMAGE"
+printf '==> Packaging Android boot image for volatile U-Boot fastboot boot\n'
+mkbootimg \
+	--kernel "$U_BOOT_BIN" \
+	--base "$BOOT_IMAGE_BASE" \
+	--kernel_offset "$BOOT_IMAGE_KERNEL_OFFSET" \
+	--pagesize "$BOOT_IMAGE_PAGESIZE" \
+	--header_version "$BOOT_IMAGE_HEADER_VERSION" \
+	--cmdline '' \
+	--output "$BOOT_IMAGE"
 
 printf '==> Packaging Qualcomm appsbl-style MBN and raw UEFI image\n'
 perl -e '
@@ -288,6 +285,8 @@ printf '    U-Boot:       %s (%s bytes)\n' "$U_BOOT_BIN" "$uboot_size"
 printf '    boot image:   %s (%s bytes, sha256 %s)\n' "$BOOT_IMAGE" "$boot_image_size" "$boot_image_sha256"
 printf '    UEFI MBN:     %s (%s bytes, sha256 %s)\n' "$UEFI_MBN" "$uefi_mbn_size" "$uefi_mbn_sha256"
 printf '    UEFI raw:     %s (%s bytes, sha256 %s)\n' "$UEFI_RAW" "$uefi_raw_size" "$uefi_raw_sha256"
+printf '    boot layout:  base=%s kernel_offset=%s pagesize=%s header_version=%s\n' \
+	"$BOOT_IMAGE_BASE" "$BOOT_IMAGE_KERNEL_OFFSET" "$BOOT_IMAGE_PAGESIZE" "$BOOT_IMAGE_HEADER_VERSION"
 printf '    MBN payload:  %s bytes aligned to %s bytes (%s pad bytes)\n' \
 	"$aligned_payload_size" "$MBN_PAYLOAD_ALIGN" "$payload_pad"
 printf '    flash pad:    %s bytes to %s-byte fastboot block alignment\n' \
@@ -296,11 +295,12 @@ printf '    raw pad:      %s bytes to UEFI partition size %s\n' \
 	"$partition_pad" "$UEFI_PARTITION_SIZE"
 printf '    APPSBL load:  %s\n' "$TEXT_BASE"
 printf '    boot buffer:  %s\n' "$FASTBOOT_BUF_ADDR"
-printf '    uImage entry: %s\n' "$BOOT_IMAGE_LOAD_ADDR"
+printf '    boot entry:   %s\n' "$BOOT_IMAGE_ENTRY_ADDR"
 
 printf '\nVolatile non-flashing test from persistent U-Boot fastboot:\n'
-printf "  fastboot -s <fame-serial> oem 'run:setenv autostart yes'\n"
-printf "  fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd'\n"
+printf "  fastboot -s <fame-serial> oem 'run:setenv fastboot_bootcmd abootimg addr %s\\; bootm start %s\\; bootm loados\\; go %s'\n" \
+	"$FASTBOOT_BUF_ADDR" \
+	"$FASTBOOT_BUF_ADDR" "$BOOT_IMAGE_ENTRY_ADDR"
 printf '  fastboot -s <fame-serial> boot %q\n' "$BOOT_IMAGE"
 
 printf '\nPersistent UEFI update from U-Boot fastboot, only after explicit approval:\n'
