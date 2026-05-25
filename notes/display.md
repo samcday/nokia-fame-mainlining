@@ -149,6 +149,25 @@ Mainline supply attachment (`drivers/gpu/drm/msm/dsi/dsi_cfg.c` `apq8064_dsi_reg
 The mainline DSI host enables `vdda`/`avdd`/`vddio` before calling the panel's `prepare()`,
 so the panel driver only sequences reset + sends the Teisko init commands.
 
+## Teisko DSI Backlight
+
+2026-05-25 bring-up breadcrumb: the downstream Orise panel driver has a DSI-native
+backlight path rather than a board-level PWM/GPIO backlight. It defines
+`write_ctrl_display` as `0x53 0x24` and `write_display_brightness` as `0x51 0x80`
+in `community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise.c:188-189`.
+The Teisko on-sequence sends exit sleep, `0xff 0x78`, address mode `0x36 0x00`,
+control display `0x53 0x24`, and display on at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise.c:1014-1038`.
+The downstream backlight callback updates byte 1 of `write_display_brightness`,
+switches TX power mode to high-speed, sends the brightness command, then returns
+to low-power mode at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise.c:1176-1205`.
+
+The mainline `panel-nokia-teisko` driver therefore registers a raw DSI backlight
+with default brightness `0x80`, sends one-byte DCS `0x51 <level>` in high-speed
+mode after display-on, and follows it with DCS `0x53 0x24` to enable brightness
+control and the backlight bit.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
