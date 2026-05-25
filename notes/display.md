@@ -704,6 +704,7 @@ The firmware happens to use PLL2, but we don't need to.
    | MDP4 globals | `INTF_SEL=0x41`, `DMA_P_CONFIG=0x0400213f`, `READ_CNFG=0x3333`, `PORTMAP=0x0`, `CS0=0x0`, `CS1=0x0`, `UNDERFLOW_CLR=0x0` |
    | MDP4 fetch/pipe | `DMA_P_FETCH_CONFIG=0x43`, all other dumped fetch configs `0x47`; `RGB1_FMT=0x000267ff`, `RGB1_UNPACK=0x03020001`, `RGB1_OP=0x10`, `OVLP0_CFG=0x3` |
    | MDP memory path | vendor UEFI scans out `RGB1_BASE0=0x80400000` with all dumped MDP IOMMU context `SCTLR` values disabled (`0x0`), so the next raw-APPSBL U-Boot probe should leave MDP IOMMU disabled and use physical framebuffer addresses |
+   | Panel reset TLMM | vendor UEFI leaves GPIO58 at `CFG=0x000003c1`, `IN_OUT=0x00000003`; raw-APPSBL U-Boot's stripped output-only `CFG=0x00000200` kept the panel black, so mirror the vendor pin config while pulsing reset |
 
    Follow-up raw-APPSBL probe notes: if direct scanout from a high U-Boot
    malloc buffer remains black while the vendor state uses `0x80400000`, switch
