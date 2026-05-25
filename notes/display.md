@@ -718,6 +718,12 @@ The firmware happens to use PLL2, but we don't need to.
    U-Boot clock framework has powered/enabled MDP, because the previous raw
    probe otherwise left `MDP_SRC` on bank 0 (`CC=0x80ff0505`,
    `NS=0x3f000008`).
+   Kernel commit `2f56bdea596129f81db4bf5fff34bbe87997ffa2` is the first
+   known panel-unblanking Teisko state: brightness/control-display commands
+   stay in the panel `prepare()` window, while `display on` is the only DCS
+   command in `enable()`. Mirror that in U-Boot by sending sleep-out/init and
+   brightness before final MDP4/DSI video enable, then sending `DCS_SET_DISPLAY_ON`
+   after the video path is enabled.
 
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
    unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
