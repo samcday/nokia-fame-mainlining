@@ -329,6 +329,29 @@ PLL divider topology: firmware/downstream use `pd->pll[]` values that produce
 the same broad link rate through a different register configuration than
 mainline's generic clock calculation.
 
+## MDP IOMMU Clues
+
+The first U-Boot RGB1 framebuffer experiment reached a clean DSI/panel sequence
+and MDP4 commit, but the panel stayed black and MDP reported
+`PRIMARY_INTF_UDERRUN` after both solid-fill and framebuffer scanout attempts.
+This points at the MDP read path rather than DSI command transport.
+
+Breadcrumbs:
+
+| Fact | Source Lines |
+| --- | --- |
+| Mainline MDP4 node uses MDP IOMMU stream IDs `0` and `2` on both MDP IOMMU blocks | `linux/arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:320-347` at `1f026b5057503ff364f1c7f62b483e673318f3e2` |
+| MDP IOMMU blocks are `0x07500000` and `0x07600000`, each with `qcom,ncb = <2>` and clocks `SMMU_AHB_CLK` + `MDP_AXI_CLK` | same file `:386-415` at the same ref |
+| Mainline `msm_iommu` treats each DT `iommus` cell as a stream ID and collects them per master | `linux/drivers/iommu/msm_iommu.c:709-740,743-768` at the same ref |
+| Mainline `msm_iommu` resets contexts, maps stream IDs to context banks, sets NS override, and programs TTBR/PRRR/NMRR before enabling the context | `linux/drivers/iommu/msm_iommu.c:84-120,224-321` at the same ref |
+| Downstream MSM8930 groups MDP port0/port1 context bank 0 MIDs as `{0, 2}` and context bank 1 MIDs as `{1, 3, 4, 5, 6, 7, 8, 9, 10}` | `community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/devices-iommu.c:572-593` |
+| Downstream MDP4 attaches all four MDP IOMMU contexts to the display domain when programming overlays | `community/android4lumia-kernel-msm8x27/drivers/video/msm/mdp4_overlay.c:4033-4054,4079-4115` |
+
+The first U-Boot IOMMU experiment should therefore enable `SMMU_AHB_CLK`,
+program both MDP IOMMU blocks (`mdp_port0`, `mdp_port1`), map both context
+banks to the downstream MID sets, and identity-map the test framebuffer with a
+simple ARMv7 first-level section page table.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
