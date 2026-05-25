@@ -705,6 +705,19 @@ The firmware happens to use PLL2, but we don't need to.
    | MDP4 fetch/pipe | `DMA_P_FETCH_CONFIG=0x43`, all other dumped fetch configs `0x47`; `RGB1_FMT=0x000267ff`, `RGB1_UNPACK=0x03020001`, `RGB1_OP=0x10`, `OVLP0_CFG=0x3` |
    | MDP memory path | vendor UEFI scans out `RGB1_BASE0=0x80400000` with all dumped MDP IOMMU context `SCTLR` values disabled (`0x0`), so the next raw-APPSBL U-Boot probe should leave MDP IOMMU disabled and use physical framebuffer addresses |
 
+   Follow-up raw-APPSBL probe notes: if direct scanout from a high U-Boot
+   malloc buffer remains black while the vendor state uses `0x80400000`, switch
+   the diagnostic framebuffer to the same low physical address and clean the
+   D-cache over the touched range before enabling MDP. I-cache is not relevant
+   for pixel visibility because MDP reads data, not instructions. MDP/DSI
+   interrupt status bits are useful diagnostics, but first-light scanout should
+   not depend on a CPU interrupt handler consuming vblank or underflow IRQs.
+   Also force `MDP_SRC` to the vendor bank-1 PLL2 state
+   (`CC=0x80ff08a5`, `MD0=0`, `MD1=0x1fb`, `NS=0x003f0001`) after the normal
+   U-Boot clock framework has powered/enabled MDP, because the previous raw
+   probe otherwise left `MDP_SRC` on bank 0 (`CC=0x80ff0505`,
+   `NS=0x3f000008`).
+
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
    unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
    `mdp4_kms.c`. Move it into `mmcc_msm8960_mdp_pd_power_on()` (force a real
