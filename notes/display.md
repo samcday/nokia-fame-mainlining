@@ -643,11 +643,15 @@ The firmware happens to use PLL2, but we don't need to.
    | DSI PLL lock wait: 1000 polls with 100 us between polls | `drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:71-85,172-207` |
    | MSM8960 TLMM GPIO register stride (`GPIO58` config at `0x008013a0`, in/out at `0x008013a4`) | `drivers/pinctrl/qcom/pinctrl-msm8960.c:380-405` |
 
-   The first U-Boot video-output probe intentionally programs RGB1 as a
-   white MDP4 solid-fill source instead of reading a framebuffer. This keeps
-   the experiment independent of MDP IOMMU/IOVA setup: if solid fill lights
-   the panel, add real RGB1 framebuffer scanout next; if it stays dark, chase
-   DSI/panel rails/backlight before spending time on IOMMU.
+   The first U-Boot video-output probe intentionally programmed RGB1 as a
+   white MDP4 solid-fill source instead of reading a framebuffer. A 2026-05-25
+   hardware run reached clean Teisko DCS init and DSI video mode, but stayed
+   black with `INTR_STATUS=0x191` (`OVERLAY0_DONE | DMA_P_DONE |
+   PRIMARY_VSYNC | PRIMARY_INTF_UDERRUN`). This means the DSI/panel side is
+   alive and the MDP commit latched, but the primary path is starving. The next
+   diagnostic therefore switches RGB1 to a small U-Boot-owned XRGB8888 color-bar
+   framebuffer. If that still underruns, the likely blocker is MDP IOMMU/IOVA
+   setup rather than panel init.
 
    Teisko DSI host/clock values derived from those lines:
 
