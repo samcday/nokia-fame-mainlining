@@ -638,6 +638,7 @@ The firmware happens to use PLL2, but we don't need to.
    | TLMM base and GPIO58 active-low reset | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:125-133`; `arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:93-100,171-177` |
    | DSI controller timing/control register equations | `drivers/gpu/drm/msm/dsi/dsi_host.c:880-1013,1077-1214` |
    | DSI host `CLK_CTRL` force-on mask before controller reset/enable | `drivers/gpu/drm/msm/dsi/dsi_host.c:96-100,936-946,1171-1189` |
+   | DSI lane swap: Fame DT `data-lanes = <1 2>` maps through msm's supported lane table to `dlane_swap = 1` / `LANE_SWAP_3012`; Android4Lumia FWVGA config and stock PCFG also report lane mapping `1` | `arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:187-190`; `drivers/gpu/drm/msm/dsi/dsi_host.c:976-982,1876-1951`; `community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise_video_fwvga_pt.c:72-85`; `panel-pcfg.xml:71-87` |
    | DSI command-DMA packet layout and trigger path | `drivers/gpu/drm/msm/dsi/dsi_host.c:1410-1459,2212-2249,2443-2450` |
    | DSI PLL lock wait: 1000 polls with 100 us between polls | `drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:71-85,172-207` |
    | MSM8960 TLMM GPIO register stride (`GPIO58` config at `0x008013a0`, in/out at `0x008013a4`) | `drivers/pinctrl/qcom/pinctrl-msm8960.c:380-405` |
@@ -657,6 +658,7 @@ The firmware happens to use PLL2, but we don't need to.
    | DSI PLL postdivs | byte divider `16` (`CTRL_9=0x0f`), DSI divider `8` (`CTRL_10=0x07`), bit divider `2` (`CTRL_8=0x71`) |
    | DSI host video timing | `ACTIVE_H=0x02100030`, `ACTIVE_V=0x032f000f`, `TOTAL=0x033c023c`, `ACTIVE_HSYNC=0x00040000`, `ACTIVE_VSYNC_VPOS=0x00010000` |
    | DSI host control | `VID_CFG0=0x00009130`, `TRIG_CTRL=0x00000004`, `CLKOUT_TIMING_CTRL=0x00000318`, `CLK_CTRL=0x0000023f`, command base control `0x00000131`, video control `0x00000133` |
+   | DSI lane swap | `LANE_SWAP_3012` / register value `0x1` |
    | Panel reset physical pulse | GPIO58 high, 2 ms; low, 2 ms; high, 20 ms (logical deassert/assert/deassert for an active-low reset GPIO) |
 
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
