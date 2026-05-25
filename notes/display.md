@@ -178,6 +178,35 @@ the working init sequence and deliberately does not attach the raw backlight to
 `drm_panel.backlight`, so DRM will not issue an automatic post-display-on
 backlight update.
 
+## Teisko Blank/Unblank Retry (2026-05-25)
+
+After the Fame-specific 28nm DSI PHY values, the panel lights and the remaining
+runtime problem is fbdev blank/unblank. A live blank test reaches the panel
+driver's `disable()` path cleanly: brightness `0x51 0x00`, control display
+`0x53 0x00`, and display off all complete. The next `unprepare()` command,
+DCS enter sleep (`0x10`), times out in the MSM DSI command-DMA path with
+`wait for video done timed out` / `cmd dma tx failed, type=0x5, data0=0x10`.
+The relevant pre-retry panel sequencing in `linux` commit `1f026b5057503` was
+`linux/drivers/gpu/drm/panel/panel-nokia-teisko.c:221-257`; the MSM DSI v2
+video-mode command path waits for a video-done slot before command DMA at
+`linux/drivers/gpu/drm/msm/dsi/dsi_host.c:1285-1324` and reports command DMA
+failures at `linux/drivers/gpu/drm/msm/dsi/dsi_host.c:1527-1652`.
+
+The same live test then unblanks with `display on` completing, but the panel
+stays dark. That matches the driver state: `disable()` has intentionally left
+DSI brightness/control-display at zero, while the existing `enable()` only sends
+display-on (`linux` commit `1f026b5057503`,
+`linux/drivers/gpu/drm/panel/panel-nokia-teisko.c:198-219`). Earlier boots show
+brightness and control-display writes are reliable before display-on
+(`boot-32.log:376-391`), but post-display-on DSI brightness writes timed out
+(`boot-27.log:353-360`).
+
+The next WIP retry therefore keeps runtime fb blank out of panel sleep mode:
+blank turns the panel off with DSI brightness/control-display zero and
+display-off, but `unprepare()` skips DCS enter-sleep and returns success so the
+DRM panel state can unwind cleanly. Unblank restores brightness/control-display
+in the pre-display-on command window before sending display-on.
+
 ## MDP Vsync Clock Retry (2026-05-25)
 
 `boot-28.log:344-353` shows the Teisko prepare sequence, DSI brightness command,
