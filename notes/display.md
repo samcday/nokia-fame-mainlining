@@ -178,6 +178,30 @@ the working init sequence and deliberately does not attach the raw backlight to
 `drm_panel.backlight`, so DRM will not issue an automatic post-display-on
 backlight update.
 
+## MDP Vsync Clock Retry (2026-05-25)
+
+`boot-28.log:344-353` shows the Teisko prepare sequence, DSI brightness command,
+and display-on command all completing without errors, but the panel remains
+visibly blank. `boot-28.log:371-380` shows fbcon and fb0 coming up, and
+`boot-28.log:382` shows unused clocks being disabled shortly afterward.
+
+MSM8227/MMCC already exposes `MDP_VSYNC_CLK`: the binding ID is
+`linux/include/dt-bindings/clock/qcom,mmcc-msm8960.h:65-70`, the clock branch is
+`linux/drivers/clk/qcom/mmcc-msm8960.c:1382-1394`, and the MDP power-domain
+clock list already includes the same branch at
+`linux/drivers/clk/qcom/mmcc-msm8960.c:3309-3317`. Android4Lumia's MSM8930
+display stack also models an MDP vsync clock: `devices-8930.c:727-732` lists
+`vsync_clk` with the MDP footswitch clocks, while `mdp_vsync.c:338-366` gets
+`vsync_clk`, verifies a nonzero rate, and configures MDP hardware-vsync timing.
+
+The Samsung Express MSM8930 sibling branch reached a similar blank/unblank issue
+and added the MDP vsync clock to MDP4 in commit `25fbaf2daf18`:
+`arch/arm/boot/dts/qcom/qcom-msm8930.dtsi:417-426` wires `MDP_VSYNC_CLK` into
+the MDP node, and `drivers/gpu/drm/msm/disp/mdp4/mdp4_kms.c:183-201,548-650`
+gets/enables/disables the optional `vsync_clk`. Fame now tests the same common
+MSM8930/MSM8227 MDP4 clock dependency by adding `vsync_clk` to the MSM8227 MDP
+node and holding it with the other MDP4 clocks.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
