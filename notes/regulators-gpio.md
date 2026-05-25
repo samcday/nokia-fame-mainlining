@@ -98,3 +98,37 @@ PM8038 L2 SEL=37, L8 SEL=43. These match mainline's existing PM8038 select_ids
 New dt-binding constants go after the current PM8917 block in
 `include/dt-bindings/mfd/qcom-rpm.h` (next free indices). Regulator types mirror the Express
 PM8917 choices: L2 (low-voltage) -> `pm8921_nldo`, L8 -> `pm8921_pldo`.
+
+## U-Boot Fame Display Rail RPM Writes
+
+The U-Boot MDP diagnostic path now needs the same DSI supply state as the
+working kernel. The MSM8227 RPM node is `qcom,rpm-msm8930` at `0x00108000`,
+with IPC routed through the KPSS/L2 syscon at `0x02011000 + 0x8`, bit 2
+(`linux/arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:99-103,178-184`).
+Mainline's RPM driver maps status registers at the RPM base, control registers
+at `+0x400`, and request registers at `+0x600`; it validates firmware version
+3 and copies the three version words into control registers 0-2 before serving
+children (`linux/drivers/mfd/qcom_rpm.c:613-617,646-665`).
+
+For MSM8930 the request control layout is `req_ctx_off=3`, `req_sel_off=11`,
+`ack_ctx_off=15`, `ack_sel_off=23`, `req_sel_size=4`, and `ack_sel_size=7`
+(`linux/drivers/mfd/qcom_rpm.c:363-372`). A regulator request writes the
+resource payload words at `req_regs[target_id + i]`, sets the selector bit in
+the request selector array, writes active context bit 0, and triggers the IPC
+bit; completion is reported through `ack_ctx_off`, with `BIT(31)` meaning RPM
+rejected the request and `BIT(30)` being a notification that should not complete
+the transaction (`linux/drivers/mfd/qcom_rpm.c:482-526,529-549`).
+
+PM8038 LDOs use the RPM8960 LDO layout: word 0 contains the microvolt request
+in bits 0-22 and the `bias-pull-down` bit in bit 23; word 1 carries load and
+force-mode fields, which the current minimal U-Boot path leaves zero. The
+kernel regulator code preserves the pull-down bit in the same cached request
+word before writing the voltage on enable (`linux/drivers/regulator/qcom_rpm-regulator.c:106-115,189-203,286-303,676-695`).
+
+The Fame panel/DSI supplies mirrored by the U-Boot diagnostic helper are:
+
+| Rail | RPM target | RPM select | Word 0 | Source |
+| --- | --- | --- | --- | --- |
+| PM8038 L2 / `dsi_vdda` | 104 | 37 | `1200000 | BIT(23)` | `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:42-46,165-168`; `linux/drivers/mfd/qcom_rpm.c:341-349` |
+| PM8038 L8 / `avdd` | 116 | 43 | `2800000 | BIT(23)` | `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:68-72,165-168`; `linux/drivers/mfd/qcom_rpm.c:341-349` |
+| PM8038 L11 / `vddio` | 122 | 46 | `1800000 | BIT(23)` | `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:74-80,165-193`; `linux/drivers/mfd/qcom_rpm.c:341-349` |
