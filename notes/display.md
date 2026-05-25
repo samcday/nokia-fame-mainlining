@@ -330,15 +330,70 @@ tree to confirm what it actually drives MDP from (expect PLL8, PLL2 unlocked):
 PLL2 `0x0400031c`/`0x04000334`, PLL15 `0x04000338`/`0x04000350`; footswitch
 `0x04000190`; DSI PLL (offsets TBD on the day).
 
+## Golden-State Dump + Pre/Post-UEFI Comparison (golden read 2026-05-24)
+
+**This SUPERSEDES the PLL8 conclusion above.** Sam reflashed unlocked UEFI and
+chained U-Boot in EFIESP where the **display is lit**; dumped over UART
+(`/dev/ttyUSB1`). The working display drives MDP **from PLL2** -- so boot-22's
+"PLL2 won't lock" was a misread of status bit16, and the PLL8 pivot (kernel
+`3e69030c`, workspace `9b97cfa`) looked like it needed reconsidering -- but
+boot-23 then confirmed PLL8 works end-to-end (MDP to userspace, `0x100`/vblank
+cleared), so PLL8 was **kept** as the settled MDP clock (see Next Work item 1).
+The firmware happens to use PLL2, but we don't need to.
+
+| Register | Pre-UEFI (raw U-Boot fastboot, SBL) | Post-UEFI (golden, display LIT) |
+| --- | --- | --- |
+| PLL2 mode `0x031c` | `0x0` disabled; my manual enable -> `0x7` | `0x00000007` (BYPASSNL+RESET_N+OUTCTRL) |
+| PLL2 L/M/N `0x320/4/8` | `0x1d`/`0x11`/`0x1b` (29/17/27 = 800 MHz) | `0x1d`/`0x11`/`0x1b` (identical) |
+| PLL2 config `0x032c` | `0x00c20000` | `0x00c20000` (identical) |
+| PLL2 TEST_CTL `0x0330` | `0x0` | `0x0` (identical) |
+| PLL2 status `0x0334` | `0x0`; after manual enable -> `0x1` (bit0; **bit16=0**) | `0x00000001` (bit0; **bit16=0**) |
+| mdp_src bank `0x00c0` | *not read (gap)* | `0x80ff08a5` (en bit2=1, bank-sel bit11=1 -> bank1) |
+| mdp_src md1 `0x00c8` | *not read (gap)* | `0x000001fb` |
+| mdp_src ns `0x00d0` | *not read (gap)* | `0x003f0001` (bank1 src-sel bits[1:0]=1 = **P_PLL2**) |
+| footswitch `0x0190` | *not read in raw (gap)*; boot-22 kernel-entry was `0x11f` | `0x0000031f` (ENABLE+RETENTION, CLAMP clear) |
+| PLL8 mode `0x903140` | `0x0010bf00` (FSM) | `0x0010bf00` (identical) |
+| PLL8 status `0x903158` | `0x00010001` (bit16 LOCKED) | `0x00010001` (identical) |
+| PLL15 mode `0x0338` | *not read* | `0x0` (unused/unfitted) |
+
+**Key observations:**
+- PLL2 L/M/N/config/TEST_CTL are **identical** pre and post -- SBL programs them,
+  UEFI leaves them. The *only* PLL2 difference is enable (mode `0x0` vs `0x7`).
+  When I manually enabled PLL2 pre-UEFI it reached the **same** mode `0x7` /
+  status `0x1` as the working golden state.
+- **bit16 (lock) is 0 in BOTH states**, even while PLL2 actively clocks a lit
+  display. So bit16 is not PLL2's readiness bit (bit0 is). PLL8's bit16 *does*
+  set -- lock-detect works, PLL2 just doesn't use it.
+- Working display: `mdp_src` enabled, bank 1, source = **PLL2**, at a rate set by
+  `md1=0x1fb` / `ns` divider (PLL2 800 MHz / N; exact rate TBD).
+- So the kernel boot-20 hang on a PLL2 rate is NOT "no lock" -- PLL2 reaches the
+  right register state. Leading theory: cold PLL2 isn't *settled* when the
+  dyn-RCG switches `mdp_src` onto it (`clk_pll_enable` blind-waits 50 us, can't
+  poll bit16), so MDP sees a not-yet-stable clock -> AHB readl stalls. PXO
+  (boot-21) and warm-PLL2 (golden) both dodge this. NB **PLL8 was never booted**
+  (`3e69030c` untested) -- it was PXO 27 MHz that passed in boot-21.
+
+**Gaps to fill (need the matching state):**
+- Read `mdp_src` (`0xc0/c4/c8/d0`) + footswitch (`0x190`) in the **pre-UEFI raw
+  fastboot** state and at **kernel entry** -- to see what the RCG/footswitch
+  start at before the kernel touches them (the most diagnostic missing rows).
+- Decode the exact golden MDP rate (`md1=0x1fb`, `ns=0x003f0001` vs `clk_tbl_mdp`
+  PLL2 rows 160/178/200/229/267 MHz).
+- Grab the DSI PLL (golden) for the panel phase.
+- Caution: the golden `0x1d0` read returned garbage (`0x7b98b3b9...`) coincident
+  with a watchdog reboot -- discard it; avoid `0x1d0+`, keep UART bursts short.
+
 ## Next Work
 
-1. **Operating clock (DONE pending test):** PLL2-vs-PLL8 is decided -- PLL2 won't
-   lock (see boot-22 section), so `max_clk` is now `128000000` (P_PLL8) in commit
-   `3e69030c`. **Flash + boot-23 on a free device** to confirm `mdp_src` runs at
-   128 MHz off PLL8 and see whether the `0x100` underflow changes (it may persist
-   until DSI/panel exist). Note `fdt_high=0xffffffff; initrd_high=0xffffffff` are
-   required in U-Boot env before `fastboot boot` or bootm fails with
-   "ramdisk - allocation error" and wedges (no software reset).
+1. **Operating clock (SETTLED -- PLL8):** boot-23 confirms `max_clk=128000000`
+   (PLL8, commit `3e69030c`) works end-to-end to userspace, and the boot-21
+   `0x100`/vblank errors are GONE (they were the too-slow 27 MHz PXO rate). Keep
+   PLL8; do NOT chase PLL2 -- its kernel "missing config" is moot (SBL sets L/M/N
+   in HW) and the boot-20 PLL2 hang was cold settle-timing, not config. PLL2 only
+   matters if gfx3d/csi are wanted later (a settle fix, not a config one). Device
+   gotcha for any boot: `fdt_high=0xffffffff; initrd_high=0xffffffff` in U-Boot
+   env before `fastboot boot`, or bootm wedges ("ramdisk - allocation error", no
+   software reset).
 2. **Scanout / DSI / panel:** chase `errors: 00000100` + `vblank time out` --
    likely the Teisko panel/DSI video path isn't scanning out (panel reset GPIO
    58, DSI video mode, Teisko init sequence); vblank needs the DSI link to
