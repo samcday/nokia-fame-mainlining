@@ -249,6 +249,25 @@ Mainline currently forces the bit unconditionally in
 `linux/drivers/gpu/drm/msm/dsi/dsi_host.c:943-952`. The next retry stops
 forcing TE select for video mode, so the expected boot log is `trig=0x4`.
 
+The TE retry still left the panel dark. Sam then captured a post-UEFI
+golden-state `md.l` dump from EFIESP-chain U-Boot while the firmware-lit panel
+was still working (2026-05-25). Key DSI host values from `md.l 0x04700000
+0x50`: `CTRL=0x137`, `STATUS0=0x8`, `VID_CFG0=0x9130`,
+`TRIG_CTRL=0x4`, `CLKOUT_TIMING_CTRL=0x418`, `EOT_PACKET_CTRL=0x1`,
+`LANE_STATUS=0x1f0c`, `LANE_CTRL=0x0`, `LANE_SWAP_CTRL=0x1`, and
+`CLK_CTRL=0x23f`. The HSE and TE experiments now match golden `VID_CFG0` and
+`TRIG_CTRL`; the remaining host-control mismatch in the existing Linux log is
+`LANE_CTRL`. `boot-32.log:359` had `lane_ctrl=0x10000000`, which is
+`DSI_LANE_CTRL_CLKLN_HS_FORCE_REQUEST` from
+`linux/drivers/gpu/drm/msm/dsi/dsi_host.c:985-991`. Android4Lumia's matching
+Teisko panel data does not set `force_clk_lane_hs` in
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise_video_fwvga_pt.c:60-94`,
+and downstream only writes that bit for panels that opt in through
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_dsi.c:272`.
+The next retry marks the panel clock non-continuous, which makes mainline skip
+the forced clock-lane HS request and should produce `mode_flags=0x401` and
+`lane_ctrl=0x0`.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
