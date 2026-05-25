@@ -202,6 +202,25 @@ gets/enables/disables the optional `vsync_clk`. Fame now tests the same common
 MSM8930/MSM8227 MDP4 clock dependency by adding `vsync_clk` to the MSM8227 MDP
 node and holding it with the other MDP4 clocks.
 
+`boot-29.log:300-301,318-319,342-343,373-384,409-410` shows the new
+`vsync_clk` path enabling cleanly at 27 MHz, so the clock is unlikely to be the
+remaining first-light blocker. The same boot still shows the Teisko prepare,
+brightness, and display-on DCS commands completing cleanly
+(`boot-29.log:354-363`), followed by fbcon and fb0 registration
+(`boot-29.log:385-396`) with the panel still dark.
+
+The next diagnostic pass therefore moves from panel commands and MDP core clocks
+to the DSI video transport. Mainline MSM DSI v2 derives the pixel/byte/source
+and escape clocks in `linux/drivers/gpu/drm/msm/dsi/dsi_host.c:727-768`, sets
+and enables them in `dsi_host.c:519-590`, and programs the host video registers
+in `dsi_host.c:840-975`. MDP4's DSI encoder programs the paired timing
+registers in `linux/drivers/gpu/drm/msm/disp/mdp4/mdp4_dsi_encoder.c:29-81`
+and asserts the DSI interface at `mdp4_dsi_encoder.c:106-128`. The Samsung
+Express sibling branch used a related DSI link-clock diagnostic in commit
+`28a8681a73b46`; Fame now adds similar temporary logging for the calculated
+rates, actual clock rates, DSI host video configuration, and MDP4 DSI timing
+registers.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
