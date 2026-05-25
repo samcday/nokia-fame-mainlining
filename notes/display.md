@@ -632,6 +632,7 @@ The firmware happens to use PLL2, but we don't need to.
    | --- | --- |
    | DSI0 host/PHY/MMCC register bases: host `0x04700000`, PLL `0x04700200`, PHY `0x04700300`, PHY regulator `0x04700500` | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:238-313` |
    | DSI host clocks and assigned PLL parents (`DSI_M_AHB`, `DSI_S_AHB`, `AMP_AHB`, `DSI_CLK`, byte/pixel/esc) | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:248-269`; `drivers/clk/qcom/mmcc-msm8960.c:2047-2437` |
+   | DSI v2 link-clock rate/enable order: byte, esc, src, pixel | `drivers/gpu/drm/msm/dsi/dsi_host.c:519-590` |
    | DSI reset IDs and MMCC reset bits | `include/dt-bindings/reset/qcom,mmcc-msm8960.h:45,61,74`; `drivers/clk/qcom/mmcc-msm8960.c:2892-2921` |
    | TLMM base and GPIO58 active-low reset | `arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:125-133`; `arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:93-100,171-177` |
    | DSI controller timing/control register equations | `drivers/gpu/drm/msm/dsi/dsi_host.c:880-1013,1077-1214` |
