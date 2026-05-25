@@ -237,6 +237,18 @@ and the downstream host maps that field directly to DSI `VID_CFG0` bit 28 at
 The next retry removes the HSE flag only, leaving the known-good command path,
 lanes, format, timings, and backlight sequencing unchanged.
 
+`boot-32.log:355-359` proves the HSE retry took: `mode_flags=0x1` and DSI
+`VID_CFG0=0x9130`, matching downstream for the Teisko video configuration, but
+the panel still stayed dark. The remaining direct DSI host register mismatch is
+`DSI_TRIG_CTRL`: boot-32 shows `trig=0x80000004`, while Android4Lumia's Teisko
+panel data has `pinfo.mipi.te_sel = 0` at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise_video_fwvga_pt.c:80-88`,
+and downstream only sets `DSI_TRIG_CTRL` bit 31 when that field is true at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_dsi_host.c:919-925`.
+Mainline currently forces the bit unconditionally in
+`linux/drivers/gpu/drm/msm/dsi/dsi_host.c:943-952`. The next retry stops
+forcing TE select for video mode, so the expected boot log is `trig=0x4`.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
