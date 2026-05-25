@@ -268,6 +268,30 @@ The next retry marks the panel clock non-continuous, which makes mainline skip
 the forced clock-lane HS request and should produce `mode_flags=0x401` and
 `lane_ctrl=0x0`.
 
+That retry lit the panel for the first time, but the image was heavily
+corrupted: full-height vertical lines, diagonal artifacts converging near the
+bottom, strobing short horizontal noise, and pulsing blue-ish vertical patches.
+This makes the DSI command/power/reset path likely-good and points to pixel
+transport integrity. The next comparison target is the 28nm-8960 DSI PHY. The
+same EFIESP-chain golden dump contains the PHY/PLL/regulator window:
+`0x04700200..0x0470055c`. Its regulator, timing, and PLL values match
+Android4Lumia's Teisko `dsi_video_mode_phy_db` in
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise_video_fwvga_pt.c:20-34`,
+while mainline currently uses generic calculated timing and generic
+28nm-8960 regulator/LDO programming in
+`linux/drivers/gpu/drm/msm/dsi/phy/dsi_phy_28nm_8960.c:468-613`.
+
+The next retry keeps the now-working host-side fixes, but scopes a Fame-only
+PHY quirk through a new `qcom,msm8227-dsi-phy-28nm-8960` compatible. For that
+compatible, the 28nm-8960 PHY will use the golden/downstream regulator table
+`{ 0x02, 0x08, 0x05, 0x00, 0x20 }`, the golden LDO value `0x25`, and the
+golden/downstream timing table
+`{ 0x67, 0x16, 0x0d, 0x00, 0x38, 0x3c, 0x12, 0x19, 0x18, 0x03, 0x04, 0xa0 }`.
+If this reduces corruption but does not fix it, the remaining suspect is the
+PLL divider topology: firmware/downstream use `pd->pll[]` values that produce
+the same broad link rate through a different register configuration than
+mainline's generic clock calculation.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
