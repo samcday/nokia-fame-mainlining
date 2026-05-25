@@ -221,6 +221,22 @@ Express sibling branch used a related DSI link-clock diagnostic in commit
 rates, actual clock rates, DSI host video configuration, and MDP4 DSI timing
 registers.
 
+`boot-31.log:344-391` confirms that the MDP4 timing and DSI link-clock math
+match the downstream-derived Teisko mode in
+`linux/drivers/gpu/drm/panel/panel-nokia-teisko.c:260-280`: 480x800,
+`htotal=573`, `vtotal=829`, DRM pixel clock 28654 kHz, and realized DSI v2
+clocks close to the requested values during command transfers. The panel
+commands still complete, but `boot-31.log:355-359` also shows
+`mode_flags=0x11` and DSI `VID_CFG0=0x10009130`. The extra `0x10000000` bit is
+`MIPI_DSI_MODE_VIDEO_HSE` as assigned in `panel-nokia-teisko.c:326-328`.
+Android4Lumia's matching FWVGA Orise panel data sets
+`pinfo.mipi.pulse_mode_hsa_he = FALSE` at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_orise_video_fwvga_pt.c:60-68`,
+and the downstream host maps that field directly to DSI `VID_CFG0` bit 28 at
+`community/android4lumia-kernel-msm8x27/drivers/video/msm/mipi_dsi_host.c:847-864`.
+The next retry removes the HSE flag only, leaving the known-good command path,
+lanes, format, timings, and backlight sequencing unchanged.
+
 ## MDP4 / MMCC Footswitch Bring-Up Dead-End (2026-05-24)
 
 Attempted MDP4 bring-up in `linux/` (MDP4 -> DSI -> Teisko). DSI host version
