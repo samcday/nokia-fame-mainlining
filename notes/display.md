@@ -728,6 +728,20 @@ The firmware happens to use PLL2, but we don't need to.
    `0x137` in the minimal U-Boot host path timed out in command DMA because we
    do not service the video-done/BLLP wait that the kernel DSI host uses.
 
+   Raw-APPSBL U-Boot success (2026-05-26): `fame_mdp panel` finally lit the
+   RM-914 panel and displayed the generated framebuffer test pattern. The
+   working order is now the golden sample for driverization:
+   enable MDP resources and PM8038 L2/L8/L11 rails, program the vendor DSI PLL
+   and DSI RCGs, bring up the DSI host/PHY while still in command/base control
+   (`DSI_CTRL=0x131`), pulse GPIO58 with the vendor TLMM config
+   (`CFG=0x000003c1`, high/low/high), send Teisko prepare DCS commands, program
+   MDP4/RGB1/DSI scanout from the physical framebuffer at `0x80400000`, send
+   `DCS_SET_DISPLAY_ON`, then switch the DSI host to video control
+   (`DSI_CTRL=0x137`). The MDP IOMMU remains disabled, matching the vendor UEFI
+   state. Clean the D-cache over the framebuffer before enabling scanout. Keep
+   the diagnostic command as the golden fallback while the reusable U-Boot video,
+   DSI host, and panel drivers are extracted.
+
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
    unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
    `mdp4_kms.c`. Move it into `mmcc_msm8960_mdp_pd_power_on()` (force a real
