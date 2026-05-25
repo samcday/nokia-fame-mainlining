@@ -582,7 +582,8 @@ The firmware happens to use PLL2, but we don't need to.
   start at before the kernel touches them (the most diagnostic missing rows).
 - Decode the exact golden MDP rate (`md1=0x1fb`, `ns=0x003f0001` vs `clk_tbl_mdp`
   PLL2 rows 160/178/200/229/267 MHz).
-- Grab the DSI PLL (golden) for the panel phase.
+- DSI PLL/RCG golden state captured on 2026-05-25 from the EFIESP diagnostic
+  build; see the vendor-UEFI table below.
 - Caution: the golden `0x1d0` read returned garbage (`0x7b98b3b9...`) coincident
   with a watchdog reboot -- discard it; avoid `0x1d0+`, keep UART bursts short.
 
@@ -676,7 +677,7 @@ The firmware happens to use PLL2, but we don't need to.
    framebuffer. If that still underruns, the likely blocker is MDP IOMMU/IOVA
    setup rather than panel init.
 
-   Teisko DSI host/clock values derived from those lines:
+   Teisko DSI host/clock values originally derived from the kernel driver:
 
    | Field | Value |
    | --- | --- |
@@ -687,6 +688,22 @@ The firmware happens to use PLL2, but we don't need to.
    | DSI host control | `VID_CFG0=0x00009130`, `TRIG_CTRL=0x00000004`, `CLKOUT_TIMING_CTRL=0x00000318`, `CLK_CTRL=0x0000023f`, command base control `0x00000131`, video control `0x00000133` |
    | DSI lane swap | `LANE_SWAP_3012` / register value `0x1` |
    | Panel reset physical pulse | GPIO58 high, 2 ms; low, 2 ms; high, 20 ms (logical deassert/assert/deassert for an active-low reset GPIO) |
+
+   Vendor-UEFI comparison update (2026-05-25): Sam booted the EFIESP
+   diagnostic U-Boot (`2026.07-rc2-00061-g36be975f6ee0`) under Nokia UEFI and
+   ran `fame_mdp dump` after the firmware had lit the display. This live dump is
+   the best available source for the exact cold-boot register target because it
+   comes from the same phone and same panel with the known-good firmware
+   sequence.
+
+   | Area | Known-good vendor-UEFI values |
+   | --- | --- |
+   | DSI PLL | `CTRL_1=0x25`, `CTRL_2=0x30`, `CTRL_3=0xc2`, `CTRL_6=0x0c`, `CTRL_8=0x41`, `CTRL_9=0x01`, `CTRL_10=0x01`, `RDY=0x1` |
+   | DSI RCGs | `DSI_CC=0x5`, `DSI_MD=0x0`, `DSI_NS=0x0000c003`; `BYTE_CC=0x80ff0005`, `BYTE_NS=0x00007001`; `ESC_CC=0x5`, `ESC_NS=0x00001000`; `PIX_CC=0x80ff0005`, `PIX_MD=0x0`, `PIX_NS=0x0000b003` |
+   | DSI host | final `CTRL=0x00000137`, `CLK_CTRL=0x0000023f`, `CLK_STATUS=0x000103ff`, `LANE_SWAP=0x1`; video timing registers match the kernel-derived values above |
+   | MDP4 globals | `INTF_SEL=0x41`, `DMA_P_CONFIG=0x0400213f`, `READ_CNFG=0x3333`, `PORTMAP=0x0`, `CS0=0x0`, `CS1=0x0`, `UNDERFLOW_CLR=0x0` |
+   | MDP4 fetch/pipe | `DMA_P_FETCH_CONFIG=0x43`, all other dumped fetch configs `0x47`; `RGB1_FMT=0x000267ff`, `RGB1_UNPACK=0x03020001`, `RGB1_OP=0x10`, `OVLP0_CFG=0x3` |
+   | MDP memory path | vendor UEFI scans out `RGB1_BASE0=0x80400000` with all dumped MDP IOMMU context `SCTLR` values disabled (`0x0`), so the next raw-APPSBL U-Boot probe should leave MDP IOMMU disabled and use physical framebuffer addresses |
 
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
    unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
