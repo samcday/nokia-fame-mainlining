@@ -722,8 +722,11 @@ The firmware happens to use PLL2, but we don't need to.
    known panel-unblanking Teisko state: brightness/control-display commands
    stay in the panel `prepare()` window, while `display on` is the only DCS
    command in `enable()`. Mirror that in U-Boot by sending sleep-out/init and
-   brightness before final MDP4/DSI video enable, then sending `DCS_SET_DISPLAY_ON`
-   after the video path is enabled.
+   brightness before final MDP4 setup, programming the MDP4 DSI path, then
+   sending `DCS_SET_DISPLAY_ON` before flipping the DSI host from command/base
+   control (`0x131`) to video control (`0x137`). Sending `display on` after
+   `0x137` in the minimal U-Boot host path timed out in command DMA because we
+   do not service the video-done/BLLP wait that the kernel DSI host uses.
 
 3. **Productize the footswitch:** the proven GFS power-up (collapse -> enable ->
    unclamp) currently lives in the `mdp4_hack_dump_mmcc()` helper in
