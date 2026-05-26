@@ -98,27 +98,42 @@ Breadcrumbs:
 | `GPU0.RESI` labels resource 14 as `UEFI_FRAME_BUFFER` and resource 15 as `DSI_PANEL_RESET` | `dsdt.dsl:13183-13294` |
 | Decoding resource order maps `UEFI_FRAME_BUFFER` to `0x80400000` size `0x00400000` | `dsdt.dsl:13150-13294` |
 | BGRT table points at image address `0x80c00000` | `bgrt.acp` bytes `0x24-0x2b` |
+| GOP reports `FrameBufferBase = 0x80400000` and `FrameBufferSize = 1536000`; direct-store testing confirms visible scanout is tight `480 * 800 * 4` with a 1920-byte stride | `notes/boot-chain.md:398`, `notes/boot-chain.md:434` |
+| MDP and DSI clocks/power domain used by the prefilled simplefb handoff come from the shared display nodes | `linux/arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:247-253`, `linux/arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:320-333` |
+| Fame DSI/panel supplies are `pm8038_l2`, `pm8038_l8`, and `pm8038_l11` | `linux/arch/arm/boot/dts/qcom/qcom-msm8227-nokia-fame.dts:197-203` |
+| A simplefb `panel` phandle makes Linux defer the framebuffer behind `/soc/dsi@4700000/panel@0` in the `msm.modeset=0` path | `boot-4.log:215` |
 
-Initial Linux simple-framebuffer assumptions:
+Linux simple-framebuffer seed:
 
 | Field | Value | Confidence |
 | --- | --- | --- |
-| Base | `0x80400000` | A, decoded from DSDT resource order |
-| Size | `0x00400000` | A, decoded from DSDT resource order |
+| Base | `0x80400000` | A, decoded from DSDT resource order and GOP `FrameBufferBase` |
+| Size | `0x00177000` | A, GOP `FrameBufferSize` and visible direct-store tight-stride test |
 | Width | `480` | A, PCFG active timing |
 | Height | `800` | A, PCFG active timing |
-| Stride | `1920` | B, inferred from 480 pixels at 32 bpp |
+| Stride | `1920` | A, visible direct-store tight-stride test |
 | Format | `a8r8g8b8` | B, inferred from Qualcomm/UEFI GOP BGRA convention and adjacent Lumia SimpleFbDxe |
 
-The raw U-Boot fastboot Linux path intentionally does not enable this as a
-`simple-framebuffer` node yet. A 2026-05-22 hardware boot attempt with an
-Android boot-image v2 DTB reached U-Boot's FDT handoff, then failed while
-allocating the kernel at `0x80208000` because the DTB-reserved framebuffer at
-`0x80400000..0x807fffff` overlaps the ARM zImage low load/decompression window.
-The relevant U-Boot fixed-address LMB allocation is `u-boot/boot/bootm.c:706-716`.
-Keep the framebuffer facts above for later UEFI/simpledrm experiments, but do
-not reserve that memory in `qcom-msm8227-nokia-fame.dts` for the first UART/UDC
-bring-up path.
+The DSDT resource window is broader than the visible GOP framebuffer
+(`0x00400000` versus `0x00177000`). The Fame DTS uses the tight GOP-visible size
+for `/chosen/framebuffer@80400000`, so Linux simpledrm sees the same `480x800x32`
+surface that firmware direct-store testing proved is scanned out.
+
+The simplefb node intentionally does not carry a `panel` phandle yet. Linux
+uses that optional property for physical display dimensions, but `fw_devlink`
+also treats it as a supplier edge. With `msm.modeset=0`, the `nokia,teisko`
+panel stack does not bind, so the simple framebuffer probe defers behind the
+panel and never takes over the bootloader scanout. Keep `display = <&mdp>` for
+handoff ownership, but leave panel ownership to the real DRM path.
+
+Do not add a static `/reserved-memory` entry for `0x80400000`. A 2026-05-22
+hardware boot attempt with an Android boot-image v2 DTB reached U-Boot's FDT
+handoff, then failed while allocating the kernel at `0x80208000` because the
+DTB-reserved framebuffer at `0x80400000..0x807fffff` overlaps the ARM zImage low
+load/decompression window. The relevant U-Boot fixed-address LMB allocation is
+`u-boot/boot/bootm.c:706-716`. U-Boot can still add a runtime memory reservation
+for the framebuffer address it actually programs before handing the FDT to
+Linux.
 
 ## Panel Power And Reset Decode
 
