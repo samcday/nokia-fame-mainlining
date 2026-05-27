@@ -721,6 +721,116 @@ The firmware happens to use PLL2, but we don't need to.
    | MDP memory path | vendor UEFI scans out `RGB1_BASE0=0x80400000` with all dumped MDP IOMMU context `SCTLR` values disabled (`0x0`), so the next raw-APPSBL U-Boot probe should leave MDP IOMMU disabled and use physical framebuffer addresses |
    | Panel reset TLMM | vendor UEFI leaves GPIO58 at `CFG=0x000003c1`, `IN_OUT=0x00000003`; raw-APPSBL U-Boot's stripped output-only `CFG=0x00000200` kept the panel black, so mirror the vendor pin config while pulsing reset |
 
+   Linux KMS handoff update (2026-05-27): after U-Boot started programming
+   the vendor-style DSI RCGs above, `boot-8-fbdev.log:525-562` showed the
+   DSI host requesting pixel/byte/esc/src rates of
+   `28654000/42981000/14327000/85962000`, but the enabled rates remained
+   `28583333/5359375/21437500/21437500`.  The byte and DSI source clocks
+   are exactly divided by the stale U-Boot `DSI1_BYTE_SRC` pre-divider 8
+   (`u-boot/cmd/fame_mdp.c:291-294,1586-1589`) and `DSI_SRC` pre-divider 4
+   (`u-boot/cmd/fame_mdp.c:291-292,1576-1583`).  Mainline's
+   `clk_rcg_bypass2_determine_rate()` ignores that pre-divider while
+   `clk_rcg_bypass2_set_rate()` preserves it (`linux/drivers/clk/qcom/clk-rcg.c:550-591`),
+   so Linux must clear the bypass2 pre-divider during `set_rate()` rather
+   than inheriting bootloader RCG state.
+
+   `boot-9-fbdev.log:524-541` showed the follow-up state after clearing those
+   bypass2 pre-dividers: pixel/byte/src enabled at
+   `28583333/42875000/85750000`, close to the requested
+   `28654000/42981000/85962000`, but panel DCS command DMA timed out on
+   `DCS_EXIT_SLEEP_MODE` and `DCS_SET_DISPLAY_ON` before the later MDP4 vblank
+   waits. Keep the next round focused on DSI command-DMA state, DSI IRQ
+   delivery, PLL postdivider registers, and MDP4 flush/vblank state rather
+   than treating the branch rates as still obviously wrong.
+
+   `boot-11.log:520-589` then showed that keeping the MSM IOMMU probe clocks
+   enabled got past the intermittent early hang, and all panel DCS commands
+   completed, including final `DCS_SET_DISPLAY_ON`. The panel displayed a
+   solid blue frame while `boot-11.log:579` reported
+   `UNDERFLOW_CLR=0x800000ff`, `INTF_SEL=0x49`, and
+   `DMA_P_CONFIG=0x010021bf`. The blue color matches the programmed MDP4 DSI
+   underflow color, while known-good U-Boot uses `UNDERFLOW_CLR=0`,
+   `INTF_SEL=0x41`, `DMA_P_CONFIG=0x0400213f`, `DMA_P_FETCH_CONFIG=0x43`,
+   and `OVLP0_CFG=0x3` (`u-boot/drivers/video/qcom_mdp4.c:138-143,336-365`).
+   The next HACK image forces those known-good MDP-side DSI values and adds an
+   RGB plane register dump to distinguish source-fetch/IOMMU issues from DSI
+   link issues.
+
+   `boot-12.log:505-589` showed that this got the DSI side much closer:
+   panel DCS commands completed, `MDP4_DSI_ENABLE=0x1`, `INTF_SEL=0x41`,
+   `DMA_P_CONFIG=0x0400213f`, `DMA_P_FETCH_CONFIG=0x43`, and
+   `UNDERFLOW_CLR=0x0`. The panel no longer showed the programmed blue
+   underflow color; it showed vertical/diagonal artifacts similar to early
+   kernel bring-up. The RGB1 dump at `boot-12.log:506,611` still had
+   `RGB1_OP=0x0`, while the known-good U-Boot path programs `RGB1_OP=0x10`
+   (`u-boot/drivers/video/qcom_mdp4.c:144-147,256-281`). The next HACK image
+   forces that observed RGB1 op-mode bit and also seeds the MDP4 global init
+   registers from the known-good dump (`READ_CNFG=0x3333`, `PORTMAP=0`,
+   `CS0=0`, `CS1=0`) instead of the stale upstream defaults in
+   `linux/drivers/gpu/drm/msm/disp/mdp4/mdp4_kms.c:24-36`.
+
+   `boot-13.log:455,507,580-613` showed that those writes took effect:
+   `CS0=0`, `CS1=0`, `PORTMAP=0`, `READ_CNFG=0x3333`, `RGB1_OP=0x10`,
+   `INTF_SEL=0x41`, `DMA_P_CONFIG=0x0400213f`, `DMA_P_FETCH_CONFIG=0x43`,
+   and `UNDERFLOW_CLR=0`. The panel still lights and all panel DCS commands
+   complete, but the display is blank instead of the boot-12 vertical/diagonal
+   artifact. Isolate the regression by backing out only the speculative
+   `RGB1_OP=0x10` force first while keeping the global MDP init values logged.
+
+   `boot-14.log:456,508,581-613` stayed blank after that rollback: RGB1 was
+   back to `OP=0x0`, but the forced global values were still active
+   (`CS0=0`, `CS1=0`, `PORTMAP=0`, `READ_CNFG=0x3333`). That isolates the
+   blank-panel regression to those MDP global init changes, not the RGB1
+   op-mode bit. Restore Linux's previous MDP4 global init values
+   (`CS0=0x0707ffff`, `CS1=0x03073f3f`, `PORTMAP=0x3`,
+   `READ_CNFG=0x02222`) and keep the log so the next boot should return to the
+   boot-12 artifact if this diagnosis is right.
+
+   `boot-15.log` stayed blank even after restoring the previous source values
+   for the MDP globals. The new clue is that `boot-15.log:278-281` bound
+   simpledrm to `9fc00000.framebuffer`, while `boot-12.log` did not bind
+   simpledrm at all. When native msm KMS removed that conflicting framebuffer,
+   `boot-15.log:297-507` tried to release the simpledrm handoff clocks and hit
+   stuck-on warnings for `dsi1_clk`, `dsi1_byte_clk`, `mdp_pclk1_clk`, and
+   `dsi1_esc_clk`. That makes simpledrm takeover/removal a separate handoff
+   variable from the MDP4 register changes, so test the next image with
+   `initcall_blacklist=simpledrm_platform_driver_init`.
+
+   `boot-15-2.log` blacklisted simpledrm successfully
+   (`initcall simpledrm_platform_driver_init blacklisted`) but still left the
+   panel lit and blank. The native path reached the same DSI/MDP state as the
+   earlier partial-success boots: DCS `display on` completed, `INTF_SEL=0x41`,
+   `DMA_P_CONFIG=0x0400213f`, `DMA_P_FETCH_CONFIG=0x43`, `UNDERFLOW_CLR=0`,
+   and RGB1 was attached to mixer 0. The next diagnostic should set
+   `MDP4_PIPE_SRC_FORMAT_SOLID_FILL` with an opaque white `SOLID_COLOR`, which
+   bypasses framebuffer/IOMMU fetch and splits pipe fetch trouble from the
+   mixer/DSI/vsync path.
+
+   `boot-16.log` then showed the expected white panel with RGB1 solid-fill
+   enabled, and MDP4 kept producing primary vblank IRQs. That proves the
+   RGB1->layer mixer->DSI output path is alive when no framebuffer memory is
+   fetched. The remaining failure is therefore on the RGB1 memory/IOMMU side.
+   Android4Lumia's MSM IOMMU platform data gives a likely explanation:
+   `mdp_port0_cb0` and `mdp_port1_cb0` carry MIDs `{0, 2}`, while
+   `mdp_port0_cb1` and `mdp_port1_cb1` carry `{1, 3, 4, 5, 6, 7, 8, 9, 10}`
+   (`community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/devices-iommu.c:572-593`).
+   The Fame-relative MSM8930 display board sets `mdp_iommu_split_domain = 0`,
+   so those context banks all attach to the same display domain
+   (`community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/board-8930-display.c:420-428`).
+   Mainline MSM8227 only exposed MIDs `0` and `2` for each MDP IOMMU port
+   (`linux/arch/arm/boot/dts/qcom/qcom-msm8227.dtsi:344-347`). The next test
+   therefore exposes MIDs `0..10` on both MDP IOMMU ports and removes the
+   solid-fill override, because RGB1 framebuffer fetch may be using one of the
+   missing MIDs.
+
+   The same 2026-05-27 image intermittently hung much earlier in
+   `msm_iommu_probe()`, after the probe self-test PAR read and before the
+   "clocks disabled" marker. That brackets the stall to the self-test
+   `__disable_clocks()` path in `linux/drivers/iommu/msm_iommu.c:955-957`, so
+   the next HACK image intentionally keeps the IOMMU probe clocks enabled after
+   the PAR self-test. This is a diagnostic workaround for the boot hang, not an
+   upstreamable clock-management decision.
+
    Follow-up raw-APPSBL probe notes: if direct scanout from a high U-Boot
    malloc buffer remains black while the vendor state uses `0x80400000`, switch
    the diagnostic framebuffer to the same low physical address and clean the
