@@ -57,7 +57,7 @@ Detailed panel facts are tracked in `notes/display.md`.
 | Camera complex | `CAMP`, `CAMS`, `CAMG`, `VFE0`, `VPE` | `dsdt.dsl:17047-17174` | Camera/VFE resource blocks and dependencies. |
 | TLMM GPIO | `GIO0` / `QCOM0500` | `dsdt.dsl:17194-17219` | GPIO controller resource block. |
 | PMIC GPIO / power key | `PWIO` / `QCOM0D20` | `dsdt.dsl:17222-17249` | PMIC GPIO and power-key methods. |
-| Button controller | `BTN0` / `QCOM0D60`, `PNP0C40` | `dsdt.dsl:17323-17397` | Resource buffer references `PWIO` and `PM01`. |
+| Button controller | `BTN0` / `QCOM0D60`, `PNP0C40` | `dsdt.dsl:17323-17397`; `dsdt.aml:0x0000e733..0x0000e90a` | Resource buffer references `PWIO` and `PM01`; decoded button pins and flags are tracked in `notes/regulators-gpio.md`. |
 | GSBI inventory | `GSBI` / `QCOM0145` | `dsdt.dsl:17399-17505` | Lists GSBI bases `0x16000000` through `0x1A200000`, plus `0x12440000` and `0x12480000`. |
 | I2C controllers | `I2C9`, `I2C3`, `IC12` / `QCOM0180` | `dsdt.dsl:17507-17574` | `IC12` is used by SSDT sensors. |
 | SMEM/SMD/GPS | `SMEM` / `QCOM0F00`, `SMD0` / `QCOM0F10`, nested `GPS` / `QCOM_GPS` | `dsdt.dsl:17576-17652` | GPS is represented under SMD. |
@@ -81,6 +81,6 @@ Detailed panel facts are tracked in `notes/display.md`.
 
 ## Open Decode Work
 
-1. Finish decoding ACPI GPIO flags, IRQ trigger/polarity, pull config, and wake bits before changing DTS.
+1. Button GPIO resources are decoded in `notes/regulators-gpio.md`; finish decoding remaining ACPI GPIO flags, IRQ trigger/polarity, pull config, and wake bits before changing touch, SDCC3 card-detect, or other DTS GPIOs.
 2. Compare ACPI storage facts with the live GPT and current DTS, especially SDCC3 removable status and `GIO0` pin 94.
 3. Decide whether SSDT ALS/PRX alternatives represent population variants or runtime probe fallbacks.

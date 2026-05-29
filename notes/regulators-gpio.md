@@ -22,10 +22,11 @@ Initial regulator/GPIO data comes from the msm8227-mainline Fame DTS and is not 
 
 | Function | GPIO | Source | Trust |
 | --- | --- | --- | --- |
-| Volume up | PM8038 GPIO3 | Fame DTS | C |
-| Volume down | PM8038 GPIO8 | Fame DTS | C |
-| Camera snapshot | PM8038 GPIO10 | Fame DTS | C |
-| Camera focus | PM8038 GPIO11 | Fame DTS | C |
+| Power key | `PWIO` logical pin 16, not a PM8038 GPIO | Stock FFU `BTN0._CRS` / `PWIO._DSM`; decoded below | A |
+| Volume up | PM8038 GPIO3, ACPI `PM01` pin 194 / `PM_GPIO03_CHGED_ST_IRQ_ID` | Stock FFU `BTN0._CRS` pin decode corroborates old Fame DTS function label | A for pin, C for label |
+| Volume down | PM8038 GPIO8, ACPI `PM01` pin 199 / `PM_GPIO08_CHGED_ST_IRQ_ID` | Stock FFU `BTN0._CRS` pin decode corroborates old Fame DTS function label | A for pin, C for label |
+| Camera snapshot / full-press | PM8038 GPIO10, ACPI `PM01` pin 201 / `PM_GPIO10_CHGED_ST_IRQ_ID` | Stock FFU `BTN0._CRS` pin decode corroborates old Fame DTS function label | A for pin, C for label |
+| Camera focus / half-press | PM8038 GPIO11, ACPI `PM01` pin 202 / `PM_GPIO11_CHGED_ST_IRQ_ID` | Stock FFU `BTN0._CRS` pin decode corroborates old Fame DTS function label | A for pin, C for label |
 | Touch IRQ | MSM GPIO11 | Disabled Fame DTS sketch | C |
 | Touch reset | MSM GPIO52 | Disabled Fame DTS sketch | C |
 | WLAN pins | MSM GPIO84-88 | Fame DTS | C |
@@ -37,11 +38,52 @@ Initial regulator/GPIO data comes from the msm8227-mainline Fame DTS and is not 
 | --- | --- | --- | --- |
 | TLMM GPIO controller | `GIO0` HID `QCOM0500` | `dsdt.dsl:17194-17219` | A |
 | PMIC GPIO / power-key controller | `PWIO` HID `QCOM0D20` | `dsdt.dsl:17222-17249` | A |
-| Button controller | `BTN0` HID `QCOM0D60`, CID `PNP0C40`, resource buffer references `PWIO` and `PM01` | `dsdt.dsl:17323-17397` | A, resource decode pending |
+| Button controller | `BTN0` HID `QCOM0D60`, CID `PNP0C40`, resource buffer references `PWIO` and `PM01`; resource decode below | `dsdt.dsl:17323-17397`, `dsdt.aml` offsets below | A |
 | SDCC3 card/resource GPIO | `SDC3` resource buffer includes `GIO0` pin 94 | `dsdt.dsl:18088-18118` | A, GPIO flags pending |
 | Touch bus/GPIO shape | `TCH1` depends on `I2C3` and `GIO0`; resource buffer decodes to I2C address `0x4B`, `GpioInt` pin 11, and `GpioIo` pin 52 | `dsdt.dsl:21056-21085` | A, GPIO flags pending |
 
 Do not overwrite DTS GPIO flags directly from raw `_CRS` bytes. Decode and verify ACPI flags, pulls, trigger type, polarity, and wake behavior first.
+
+## Stock FFU Button Decode
+
+The current workspace did not have `iasl` on `PATH` during the 2026-05-29
+decode, so the button resources were decoded directly from the AML resource
+descriptors. Source file:
+`extracted/acpi-or-platform-config/RM-914-059S083/PLAT-files/ACPI/dsdt.aml`.
+
+`BTN0` is `QCOM0D60` with `CID` `PNP0C40`. Its device object starts at AML
+offset `0x0000e733`, and its `_CRS` resource payload is a 352-byte resource
+template at `0x0000e771..0x0000e8d0`. Each physical/logical button has one
+`GpioInt` descriptor followed by a matching `GpioIo` descriptor.
+
+| Order | Function | Interrupt AML Offset | GPIO I/O AML Offset | ACPI Resource | PMIC Mapping | Flags |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Power key | `0x0000e771` | `0x0000e794` | `PWIO` pin 16 | Not PM8038 GPIO | `GpioInt(Edge, ActiveBoth, Shared, NoWake, PullUp)`, `PWIO._DSM` marks pin 16 asserted-high |
+| 2 | Volume up | `0x0000e7b7` | `0x0000e7da` | `PM01` pin 194 | PM8038 GPIO3 | `GpioInt(Edge, ActiveBoth, SharedAndWake, PullDefault)`, debounce `0x1838` = 62 ms, asserted-low by default |
+| 3 | Volume down | `0x0000e7fd` | `0x0000e820` | `PM01` pin 199 | PM8038 GPIO8 | `GpioInt(Edge, ActiveBoth, SharedAndWake, PullDefault)`, debounce 62 ms, asserted-low by default |
+| 4 | Camera focus / half-press | `0x0000e843` | `0x0000e866` | `PM01` pin 202 | PM8038 GPIO11 | `GpioInt(Edge, ActiveBoth, Shared, NoWake, PullDefault)`, debounce 62 ms, asserted-low by default |
+| 5 | Camera snapshot / full-press | `0x0000e889` | `0x0000e8ac` | `PM01` pin 201 | PM8038 GPIO10 | `GpioInt(Edge, ActiveBoth, SharedAndWake, PullDefault)`, debounce 62 ms, asserted-low by default |
+
+`BTN0` also has two short methods after `_CRS`: `BNWP` returns buffer
+`00 02 03 07 08` at AML payload offset `0x0000e8e6`, and `BNAS` returns
+buffer `01 00 00 00 00` at AML payload offset `0x0000e900`. Their exact
+Windows Phone semantics are still unknown; do not use them for Linux input
+mapping without another source.
+
+The `PM01` ACPI pin numbers are PMIC interrupt IDs, not DT GPIO specifier
+numbers. The mapping is corroborated two ways:
+
+| Fact | Source | Trust |
+| --- | --- | --- |
+| Downstream PMIC IRQ IDs number PM GPIO changed-state interrupts as `PM_GPIO01_CHGED_ST_IRQ_ID = 192`, `PM_GPIO03 = 194`, `PM_GPIO08 = 199`, `PM_GPIO10 = 201`, and `PM_GPIO11 = 202`. | `community/android4lumia-lk-msm8227/platform/msm8x60/include/platform/pmic.h:155-171` | C |
+| Mainline `pinctrl-ssbi-gpio` translates PM8xxx GPIO IRQ specifiers as 1-based physical GPIO numbers and maps child hwirq to parent hwirq with `+ 0xc0`; `qcom,pm8038-gpio` exposes 12 GPIOs. | `linux/drivers/pinctrl/qcom/pinctrl-ssbi-gpio.c:53,683-696,707-724` | E |
+| Downstream MSM8930 PM8038 setup configures key GPIO3/GPIO8/GPIO10/GPIO11 as inputs with 30 uA pull-ups, normal function, no output drive, and PM8038 L11 VIN; LK carries the same key GPIO input/pull setup. | `community/android4lumia-kernel-msm8x27/arch/arm/mach-msm/board-8930-pmic.c:72-76,147-153`; `community/android4lumia-lk-msm8227/platform/msm8960/gpio.c:187-199` | C |
+
+Therefore, for future DT work using `qcom,pm8038-gpio`, the physical GPIO
+specifier should be `3`, `8`, `10`, and `11` for the four non-power buttons,
+not zero-based `2`, `7`, `9`, and `10`. The power key should be modeled through
+the PMIC power-key/PWIO path, not as a PM8038 GPIO, unless live testing proves a
+separate Linux binding is needed.
 
 ## MSM8930/PM8038 RPM Breadcrumbs
 
